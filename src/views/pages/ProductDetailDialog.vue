@@ -741,6 +741,13 @@ const dialogVisible = computed({
                     </div>
 
                     <Divider />
+                    <div class="mb-3">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+                            <div class="text-sm sm:text-base text-gray-500 dark:text-gray-400">
+                                Min QTY: <span class="font-medium">{{ product.minimum_qty }}</span> | Max QTY: <span class="font-medium">{{ product.maximum_qty }}</span>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- ถ้ามีหลายหน่วยให้แสดงตัวเลือกหน่วย -->
                     <div class="mb-4">
@@ -857,10 +864,7 @@ const dialogVisible = computed({
                                 </div>
                                 <!-- ปียาง -->
                                 <div class="text-center">
-                                     <span :class="['font-medium text-xs', isLocationOrderable(loc) ? 'text-green-600' : 'text-gray-500']">
-                                        {{ loc.warehouse }} || {{ loc.location }}
-                                    </span>
-
+                                    <span :class="['font-medium text-xs', isLocationOrderable(loc) ? 'text-green-600' : 'text-gray-500']"> {{ loc.warehouse }} || {{ loc.location }} </span>
                                 </div>
 
                                 <!-- ราคา -->
@@ -871,7 +875,6 @@ const dialogVisible = computed({
 
                             <!-- Total -->
                             <div class="grid grid-cols-4 gap-2 p-3 bg-gray-100 dark:bg-gray-700 font-medium border-t">
-
                                 <div class="text-center">รวม: {{ totalStockBalance }}</div>
                                 <div class="text-center text-primary">สั่ง: {{ totalOrderQuantity }}</div>
                                 <div></div>
