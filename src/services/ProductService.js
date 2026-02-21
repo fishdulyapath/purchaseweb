@@ -129,7 +129,7 @@ export default {
                             image: this.getProductImageUrl(primaryProduct.item_code),
                             imageFallback: this.getPlaceholderImage(),
                             category: primaryProduct.category || '',
-                            description: `รหัสสินค้า: ${primaryProduct.item_code}\nบาร์โค้ด: ${primaryProduct.barcode || 'ไม่ระบุ'}\nหน่วย: ${primaryProduct.unit_code || 'ไม่ระบุ'}`,
+                            description: `รหัสสินค้า: ${primaryProduct.item_code}\nหน่วย: ${primaryProduct.unit_code || 'ไม่ระบุ'}`,
                             otherUnits: otherUnits,
                             // แปลงข้อมูลให้ตรงกับที่ ProductDetail.vue ใช้
                             id: primaryProduct.item_code,

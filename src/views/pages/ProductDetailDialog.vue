@@ -11,7 +11,6 @@ import Divider from 'primevue/divider';
 import Galleria from 'primevue/galleria';
 import OverlayPanel from 'primevue/overlaypanel';
 import ProgressSpinner from 'primevue/progressspinner';
-import Tag from 'primevue/tag';
 import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
@@ -50,29 +49,8 @@ const isLoggedIn = computed(() => authenStore.isAuthenticated);
 
 // ข้อมูลสต็อกตาม location (ปียาง)
 const stockLocations = ref([]);
-// จำนวนที่จะสั่งซื้อแต่ละ location { location: quantity }
-const locationQuantities = ref({});
-// คลังที่เลือก
-const selectedWarehouse = ref('');
-
-// ดึงคลังที่เลือกจาก localStorage
-function getSelectedWarehouse() {
-    try {
-        const warehouseData = localStorage.getItem('_selectedWarehouse');
-        if (warehouseData) {
-            const parsed = JSON.parse(warehouseData);
-            return parsed.code || '';
-        }
-    } catch (err) {
-        console.error('Error parsing warehouse data:', err);
-    }
-    return '';
-}
-
-// ตรวจสอบว่า location นั้นสามารถสั่งได้หรือไม่ (อยู่ในคลังที่เลือก)
-function isLocationOrderable(loc) {
-    return loc.warehouse === selectedWarehouse.value;
-}
+// จำนวนสั่งซื้อรวม
+const orderQuantity = ref(0);
 
 // สำหรับการแชร์
 const shareItems = ref([
@@ -147,6 +125,8 @@ const currentUnit = computed(() => {
             price: product.value.price,
             sold_out: product.value.sold_out,
             balance_qty: product.value.balance_qty,
+            minimum_qty: product.value.minimum_qty,
+            maximum_qty: product.value.maximum_qty,
             sum_sale: product.value.sum_sale
         };
     } else {
@@ -166,42 +146,21 @@ const totalStockBalance = computed(() => {
     return stockLocations.value.reduce((sum, loc) => sum + parseFloat(loc.balance_qty || 0), 0);
 });
 
-// คำนวณจำนวนรวมที่สั่งจากทุก location
-const totalOrderQuantity = computed(() => {
-    return Object.values(locationQuantities.value).reduce((sum, qty) => sum + (parseInt(qty) || 0), 0);
-});
-
-// คำนวณราคารวมของสินค้าที่เลือกทั้งหมด
-const totalOrderPrice = computed(() => {
-    let total = 0;
-    for (const [location, qty] of Object.entries(locationQuantities.value)) {
-        if (qty > 0) {
-            const loc = stockLocations.value.find((l) => l.location.toString() === location.toString());
-            const price = parseFloat(loc?.price || 0);
-            total += price * parseInt(qty);
-        }
-    }
-    return total;
-});
-
 // ตรวจสอบว่าสามารถเพิ่มลงตะกร้าได้หรือไม่
 const canAddToCart = computed(() => {
-    return totalOrderQuantity.value > 0;
+    return orderQuantity.value > 0;
 });
 
 // ตรวจสอบเมื่อ Dialog เปิดและมี itemCode หรือเมื่อ itemCode เปลี่ยน
 watch([() => props.visible, () => props.itemCode], ([newVisible, newItemCode], [oldVisible, oldItemCode]) => {
     if (newVisible && newItemCode && ((!oldVisible && newVisible) || (newVisible && newItemCode !== oldItemCode))) {
-        // console.log('Fetching product detail for:', newItemCode);
-        // รีเซ็ตค่าต่างๆ เมื่อโหลดข้อมูลใหม่
         product.value = null;
         images.value = [];
         selectedUnitIndex.value = 0;
         stockLocations.value = [];
-        locationQuantities.value = {};
+        orderQuantity.value = 0;
         loading.value = true;
 
-        // โหลดข้อมูลสินค้า
         fetchProductDetail();
     }
 });
@@ -219,34 +178,18 @@ async function fetchProductStock() {
     if (!product.value || !product.value.code || !currentUnit.value) return;
 
     loadingStock.value = true;
-    // ดึงคลังที่เลือกจาก localStorage
-    selectedWarehouse.value = getSelectedWarehouse();
 
     try {
         const result = await ProductService.getProductStock(product.value.code, currentUnit.value.unit_code);
 
         if (result.data && result.data.length > 0) {
-            // เรียงลำดับให้ warehouse ที่ตรงกับที่เลือกขึ้นก่อน
-            const sortedData = [...result.data].sort((a, b) => {
-                const aMatch = a.warehouse === selectedWarehouse.value ? 0 : 1;
-                const bMatch = b.warehouse === selectedWarehouse.value ? 0 : 1;
-                return aMatch - bMatch;
-            });
-
-            stockLocations.value = sortedData;
-            // รีเซ็ตจำนวนสั่งซื้อแต่ละ location เป็น 0
-            locationQuantities.value = {};
-            sortedData.forEach((loc) => {
-                locationQuantities.value[loc.location] = 0;
-            });
+            stockLocations.value = result.data;
         } else {
             stockLocations.value = [];
-            locationQuantities.value = {};
         }
     } catch (error) {
         console.error('Error fetching product stock:', error);
         stockLocations.value = [];
-        locationQuantities.value = {};
     } finally {
         loadingStock.value = false;
     }
@@ -420,134 +363,38 @@ function copyLink() {
     shareOverlay.value.hide();
 }
 
-// เพิ่มจำนวนสินค้าตาม location
-function incrementLocationQuantity(location) {
-    const loc = stockLocations.value.find((l) => l.location === location);
-    const warehouse = localStorage.getItem('_selectedWarehouse') ? JSON.parse(localStorage.getItem('_selectedWarehouse')).code : '';
-    if (!loc) return;
-
-    const maxQty = parseInt(loc.balance_qty) || 0;
-    const currentQty = locationQuantities.value[location] || 0;
-
-    // ตรวจสอบจำนวนในตะกร้าของ location เดียวกัน
-    const inCartQty = getLocationQuantityInCart(location, warehouse);
-    const remainingStock = maxQty - inCartQty;
-
-    if (currentQty < remainingStock) {
-        locationQuantities.value[location] = currentQty + 1;
-    } else {
-        toast.add({
-            severity: 'info',
-            summary: 'ข้อมูลสต็อก',
-            detail: `ปียาง ${location} มีคงเหลือ ${maxQty} ${currentUnit.value?.unit_code || ''} (อยู่ในตะกร้าแล้ว ${inCartQty})`,
-            life: 3000
-        });
-    }
-}
-
-// ลดจำนวนสินค้าตาม location
-function decrementLocationQuantity(location) {
-    const currentQty = locationQuantities.value[location] || 0;
-    if (currentQty > 0) {
-        locationQuantities.value[location] = currentQty - 1;
-    }
-}
-
-// ดึงจำนวนที่มีในตะกร้าของ location นั้นๆ (รวมเงื่อนไขคลังด้วย)
-function getLocationQuantityInCart(location, warehouse) {
-    if (!product.value || !currentUnit.value) return 0;
-
-    // console.log('cartStore.cartItems :', cartStore.cartItems);
-    // console.log('warehouse :', warehouse, ' location :', location);
-    const cartItem = cartStore.cartItems.find((item) => item.item_code === (product.value.id || product.value.code) && item.unit_code === currentUnit.value.unit_code && item.shelf_code === location && item.wh_code === warehouse);
-    return cartItem ? parseInt(cartItem.qty) : 0;
-}
-
-// คำนวณจำนวนที่สามารถเพิ่มได้อีกของแต่ละ location
-function getRemainingStockForLocation(location) {
-    const loc = stockLocations.value.find((l) => l.location === location);
-    const warehouse = localStorage.getItem('_selectedWarehouse') ? JSON.parse(localStorage.getItem('_selectedWarehouse')).code : '';
-    if (!loc) return 0;
-
-    const maxQty = parseInt(loc.balance_qty) || 0;
-    const inCartQty = getLocationQuantityInCart(location, warehouse);
-    return Math.max(0, maxQty - inCartQty);
-}
-
-// ตรวจสอบว่า location นั้นสามารถเพิ่มได้อีกหรือไม่
-function canIncrementLocation(location) {
-    const currentQty = locationQuantities.value[location] || 0;
-    const remainingStock = getRemainingStockForLocation(location);
-    return currentQty < remainingStock;
-}
-
 function addToCart() {
     if (!product.value || !canAddToCart.value) return;
 
     const unit = currentUnit.value;
+    const qty = orderQuantity.value;
     addingToCart.value = true;
 
-    // รวบรวมรายการสินค้าทั้งหมดเป็น array เดียว
-    const cartItems = [];
+    const cartItem = {
+        id: `${product.value.code}_${unit.unit_code}`,
+        item_code: product.value.code,
+        code: product.value.code,
+        name: product.value.name,
+        item_name: product.value.name,
+        price: parseFloat(unit.price) || 0,
+        image: product.value.image,
+        category: product.value.category || '',
+        unit: unit.unit_code,
+        unit_code: unit.unit_code,
+        barcode: product.value.barcode || '',
+        wh_code: localStorage.getItem('_warehouseCode') || '',
+        shelf_code: '',
+        location_name: ''
+    };
 
-    // console.log('locationQuantities', locationQuantities.value);
-    // console.log('stockLocations', stockLocations.value);
+    const existingCartItem = cartStore.cartItems.find((item) => item.item_code === cartItem.item_code && item.unit_code === cartItem.unit_code);
+    const finalQty = existingCartItem ? parseInt(existingCartItem.qty) + qty : qty;
 
-    for (const [location, qty] of Object.entries(locationQuantities.value)) {
-        if (qty > 0) {
-            const loc = stockLocations.value.find((l) => l.location.toString() === location.toString());
-            // console.log('loc', loc);
-
-            const cartItem = {
-                id: `${product.value.code}_${unit.unit_code}_${location}`,
-                item_code: product.value.code,
-                code: product.value.code,
-                name: product.value.name,
-                item_name: product.value.name,
-                price: parseFloat(loc?.price || unit.price) || 0,
-                image: product.value.image,
-                category: product.value.category || '',
-                unit: unit.unit_code,
-                unit_code: unit.unit_code,
-                barcode: product.value.barcode || '',
-                wh_code: loc?.warehouse || localStorage.getItem('_warehouseCode') || '',
-                shelf_code: location, // ใช้ location เป็น shelf_code (ปียาง)
-                location_name: loc?.location_name || location
-            };
-            // console.log('cartItem', cartItem);
-            // ตรวจสอบว่ามีสินค้านี้ในตะกร้าแล้วหรือไม่
-
-            // console.log('cartStore.cartItems', cartStore.cartItems);
-            const existingCartItem = cartStore.cartItems.find((item) => item.item_code === cartItem.item_code && item.unit_code === cartItem.unit_code && item.shelf_code === cartItem.shelf_code);
-            // console.log('existingCartItem', existingCartItem);
-            let finalQty = qty;
-            if (existingCartItem) {
-                finalQty = parseInt(existingCartItem.qty) + qty;
-            }
-            // console.log('finalQty', finalQty);
-            cartItems.push({ ...cartItem, qty: finalQty });
-        }
-    }
-
-    // console.log('Adding to cart items:', cartItems);
-
-    // ส่งรายการสินค้าทั้งหมดไป API ครั้งเดียว
     cartStore
-        .addMultipleToCart(cartItems)
+        .addMultipleToCart([{ ...cartItem, qty: finalQty }])
         .then(() => {
-            emit('added-to-cart', { itemCode: product.value.code, totalQty: totalOrderQuantity.value });
-
-            // รีเซ็ตจำนวนหลังเพิ่มลงตะกร้า
-            Object.keys(locationQuantities.value).forEach((loc) => {
-                locationQuantities.value[loc] = 0;
-            });
-
-            // toast.add({
-            //     severity: 'success',
-            //     summary: 'เพิ่มสินค้าแล้ว',
-            //     detail: `เพิ่ม ${product.value.name} ลงในตะกร้าแล้ว`,
-            //     life: 3000
-            // });
+            emit('added-to-cart', { itemCode: product.value.code, totalQty: qty });
+            orderQuantity.value = 0;
         })
         .catch((err) => {
             console.error('Error adding to cart:', err);
@@ -566,11 +413,8 @@ function addToCart() {
 // เปลี่ยนหน่วยสินค้า
 async function changeUnit(index) {
     selectedUnitIndex.value = index;
-    // รีเซ็ตข้อมูลสต็อกและจำนวนเมื่อเปลี่ยนหน่วย
     stockLocations.value = [];
-    locationQuantities.value = {};
-
-    // ดึงข้อมูลสต็อกใหม่ตามหน่วยที่เลือก
+    orderQuantity.value = 0;
     await fetchProductStock();
 }
 
@@ -611,25 +455,6 @@ function handleQuantityKeydown(event) {
     if (!isNumber && !isControl) {
         event.preventDefault();
     }
-}
-
-function validateLocationQuantity(location) {
-    let qty = parseInt(locationQuantities.value[location]) || 0;
-
-    if (qty < 0) qty = 0;
-
-    const remainingStock = getRemainingStockForLocation(location);
-    if (qty > remainingStock) {
-        qty = remainingStock;
-        toast.add({
-            severity: 'info',
-            summary: 'ข้อมูลสต็อก',
-            detail: `สามารถสั่งได้สูงสุด ${remainingStock} ${currentUnit.value?.unit_code || ''} สำหรับปียาง ${location}`,
-            life: 3000
-        });
-    }
-
-    locationQuantities.value[location] = qty;
 }
 
 function closeDialog() {
@@ -725,9 +550,7 @@ const dialogVisible = computed({
                     </div>
 
                     <!-- Tags positioned on the gallery -->
-                    <div class="absolute top-3 left-3 flex flex-col gap-2">
-                        <Tag :value="isOutOfStock ? 'สินค้าหมด' : 'มีสินค้า'" :severity="isOutOfStock ? 'danger' : 'success'" class="text-xs sm:text-sm" />
-                    </div>
+                    <div class="absolute top-3 left-3 flex flex-col gap-2"></div>
                 </div>
 
                 <!-- Product info -->
@@ -741,31 +564,22 @@ const dialogVisible = computed({
                     </div>
 
                     <Divider />
-                    <div class="mb-3">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
-                            <div class="text-sm sm:text-base text-gray-500 dark:text-gray-400">
-                                Min QTY: <span class="font-medium">{{ product.minimum_qty }}</span> | Max QTY: <span class="font-medium">{{ product.maximum_qty }}</span>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- ถ้ามีหลายหน่วยให้แสดงตัวเลือกหน่วย -->
-                    <div class="mb-4">
+                    <div class="mb-3">
                         <div class="text-base font-medium mb-2">เลือกหน่วย:</div>
                         <div class="flex flex-wrap gap-2">
-                            <!-- ปุ่มเลือกหน่วยหลัก -->
                             <Button :label="product.unit_code" :outlined="selectedUnitIndex !== 0" @click="changeUnit(0)" class="text-md" />
-
-                            <!-- ปุ่มเลือกหน่วยอื่นๆ -->
                             <Button v-for="(unitItem, idx) in product.otherUnits" :key="idx" :label="unitItem.unit_code" :outlined="selectedUnitIndex !== idx + 1" @click="changeUnit(idx + 1)" class="text-sm" size="small" />
                         </div>
                     </div>
 
-                    <!-- แสดงข้อความสินค้าหมด (ไม่แสดงขณะกำลังโหลด) -->
-                    <div v-if="isOutOfStock && !loadingStock" class="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 p-3 rounded-lg text-base mb-4 flex items-center">
-                        <i class="pi pi-exclamation-triangle mr-2"></i>
-                        <span>สินค้าหมด ไม่สามารถสั่งซื้อได้</span>
+                    <!-- ราคา / Min / Max ตามหน่วยที่เลือก -->
+                    <div v-if="currentUnit" class="mb-4 text-sm text-gray-700 dark:text-gray-300 flex flex-wrap gap-4">
+                        <span>ราคา: <strong class="text-primary">฿{{ parseFloat(currentUnit.price || 0).toLocaleString() }}</strong> / {{ currentUnit.unit_code }}</span>
+                        <span>สั่งซื้อต่ำสุด: <strong>{{ parseFloat(currentUnit.minimum_qty) > 0 ? formatNumber(parseFloat(currentUnit.minimum_qty)) : '-' }}</strong></span>
+                        <span>สั่งซื้อสูงสุด: <strong>{{ parseFloat(currentUnit.maximum_qty) > 0 ? formatNumber(parseFloat(currentUnit.maximum_qty)) : '-' }}</strong></span>
                     </div>
+
                     <!-- Loading stock -->
                     <div v-if="loadingStock" class="flex flex-col justify-center items-center p-6 bg-gray-50 dark:bg-gray-800/30 rounded-lg">
                         <ProgressSpinner style="width: 40px; height: 40px" />
@@ -796,100 +610,80 @@ const dialogVisible = computed({
                         <span>มีในตะกร้าแล้ว <Badge :value="quantityInCart" severity="info" class="ml-1"></Badge></span>
                     </div>
 
-                    <!-- Stock locations table (ปียาง) -->
-                    <div class="mb-4" v-if="isLoggedIn && !isOutOfStock">
-                        <div class="text-base font-medium mb-2">{{ groupMain == 'G001' || groupMain == 'G003' ? 'เลือกจำนวนตามปียาง:' : 'เลือกจำนวน:' }}</div>
+                    <!-- Stock locations table (ปียาง) - แสดงยอดคงเหลือตามที่เก็บ -->
+                    <div class="mb-4" v-if="isLoggedIn && stockLocations.length > 0">
+                        <div class="text-base font-medium mb-2">ยอดคงเหลือตาม{{ groupMain == 'G001' || groupMain == 'G003' ? 'ปียาง' : 'ที่เก็บ' }}:</div>
 
                         <!-- Stock table -->
                         <div class="bg-gray-50 dark:bg-gray-800/30 rounded-lg overflow-hidden">
                             <!-- Header -->
-                            <div class="grid grid-cols-4 gap-2 p-3 bg-gray-100 dark:bg-gray-700 font-medium text-sm">
-                                <div class="text-center">คงเหลือ</div>
-                                <div class="text-center">จำนวนสั่ง</div>
+                            <div class="grid grid-cols-2 gap-2 p-3 bg-gray-100 dark:bg-gray-700 font-medium text-sm">
                                 <div class="text-center">{{ groupMain == 'G001' || groupMain == 'G003' ? 'ปียาง' : 'ที่เก็บ' }}</div>
-                                <div class="text-center">ราคา</div>
+                                <div class="text-center">คงเหลือ</div>
                             </div>
                             <!-- Rows -->
                             <div
                                 v-for="(loc, index) in stockLocations"
                                 :key="loc.location"
-                                :class="['grid grid-cols-4 gap-2 p-3 items-center', index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50', !isLocationOrderable(loc) ? 'opacity-60' : '']"
+                                :class="['grid grid-cols-2 gap-2 p-3 items-center', index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50']"
                             >
-                                <!-- คลัง -->
-                                <!-- <div class="text-center">
-                                    <span :class="['font-medium text-xs', isLocationOrderable(loc) ? 'text-green-600' : 'text-gray-500']">
-                                        {{ loc.warehouse }}
-                                    </span>
-                                </div> -->
+                                <!-- ที่เก็บ -->
+                                <div class="text-center">
+                                    <span class="font-medium text-xs text-gray-700 dark:text-gray-300">{{ loc.warehouse_name }} | {{ loc.location_name }}</span>
+                                </div>
 
                                 <!-- คงเหลือ -->
                                 <div class="text-center">
                                     <span class="font-medium">{{ parseInt(loc.balance_qty) }}</span>
-
-                                    <div v-if="getLocationQuantityInCart(loc.location, loc.warehouse) > 0" class="text-xs text-blue-500">ในตะกร้า: {{ getLocationQuantityInCart(loc.location, loc.warehouse) }}</div>
-                                </div>
-
-                                <!-- จำนวนสั่ง - แสดงเฉพาะ warehouse ที่เลือก -->
-                                <div class="flex items-center justify-center gap-1">
-                                    <template v-if="isLocationOrderable(loc)">
-                                        <Button
-                                            icon="pi pi-minus"
-                                            text
-                                            rounded
-                                            size="small"
-                                            @click="decrementLocationQuantity(loc.location)"
-                                            :disabled="(locationQuantities[loc.location] || 0) <= 0"
-                                            class="w-8 h-8 border border-gray-300 dark:border-gray-600"
-                                        />
-                                        <input
-                                            type="text"
-                                            v-model="locationQuantities[loc.location]"
-                                            class="w-12 text-center font-medium border border-gray-300 dark:border-gray-600 rounded px-1 py-1 bg-white dark:bg-gray-700"
-                                            @blur="validateLocationQuantity(loc.location)"
-                                            @keydown="handleQuantityKeydown"
-                                        />
-                                        <Button
-                                            icon="pi pi-plus"
-                                            text
-                                            rounded
-                                            size="small"
-                                            @click="incrementLocationQuantity(loc.location)"
-                                            :disabled="!canIncrementLocation(loc.location)"
-                                            class="w-8 h-8 border border-gray-300 dark:border-gray-600"
-                                        />
-                                    </template>
-                                    <template v-else>
-                                        <span class="text-gray-400 text-xs">-</span>
-                                    </template>
-                                </div>
-                                <!-- ปียาง -->
-                                <div class="text-center">
-                                    <span :class="['font-medium text-xs', isLocationOrderable(loc) ? 'text-green-600' : 'text-gray-500']"> {{ loc.warehouse }} || {{ loc.location }} </span>
-                                </div>
-
-                                <!-- ราคา -->
-                                <div class="text-center">
-                                    <span class="font-medium text-green-600">฿{{ parseFloat(loc.price || 0).toLocaleString() }}</span>
                                 </div>
                             </div>
 
                             <!-- Total -->
-                            <div class="grid grid-cols-4 gap-2 p-3 bg-gray-100 dark:bg-gray-700 font-medium border-t">
-                                <div class="text-center">รวม: {{ totalStockBalance }}</div>
-                                <div class="text-center text-primary">สั่ง: {{ totalOrderQuantity }}</div>
-                                <div></div>
-                                <div class="text-center text-green-600">฿{{ formatNumber(totalOrderPrice) }}</div>
+                            <div class="grid grid-cols-2 gap-2 p-3 bg-gray-100 dark:bg-gray-700 font-medium border-t text-sm">
+                                <div class="text-center">รวม</div>
+                                <div class="text-center">{{ totalStockBalance }}</div>
                             </div>
                         </div>
                     </div>
 
+                    <!-- จำนวนสั่งซื้อ -->
+                    <div class="mb-4" v-if="isLoggedIn">
+                        <div class="text-base font-medium mb-2">จำนวนสั่งซื้อ:</div>
+                        <div class="flex items-center gap-2">
+                            <Button
+                                icon="pi pi-minus"
+                                text
+                                rounded
+                                size="small"
+                                @click="orderQuantity > 0 ? orderQuantity-- : null"
+                                :disabled="orderQuantity <= 0"
+                                class="w-10 h-10 border border-gray-300 dark:border-gray-600"
+                            />
+                            <input
+                                type="text"
+                                v-model="orderQuantity"
+                                class="w-20 text-center font-medium text-lg border border-gray-300 dark:border-gray-600 rounded px-2 py-2 bg-white dark:bg-gray-700"
+                                @keydown="handleQuantityKeydown"
+                            />
+                            <Button
+                                icon="pi pi-plus"
+                                text
+                                rounded
+                                size="small"
+                                @click="orderQuantity++"
+                                class="w-10 h-10 border border-gray-300 dark:border-gray-600"
+                            />
+                            <span class="text-gray-500 text-sm ml-1">{{ currentUnit?.unit_code }}</span>
+                        </div>
+                    </div>
+
                     <!-- Short description -->
-                    <div class="mb-4 mt-3 bg-gray-50 dark:bg-gray-800/30 p-3 rounded-lg">
+                    <!-- <div class="mb-4 mt-3 bg-gray-50 dark:bg-gray-800/30 p-3 rounded-lg">
                         <div class="text-base font-medium mb-2">รายละเอียด</div>
                         <p class="text-sm sm:text-base text-gray-600 dark:text-gray-300 whitespace-pre-line">
                             {{ product.description || 'ไม่มีคำอธิบายสำหรับสินค้านี้' }}
                         </p>
-                    </div>
+                    </div> -->
 
                     <Divider />
 
