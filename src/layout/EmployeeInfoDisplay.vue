@@ -17,16 +17,6 @@ const selectedWarehouse = ref(null);
 const warehouseOptions = ref([]);
 const allWarehouseOptions = ref([]);
 const isLoadingWarehouses = ref(false);
-const saleTypeName = ref('');
-const saleType = ref(1);
-
-// ตัวแปรสำหรับเปลี่ยนประเภทการขาย
-const showSaleTypeDialog = ref(false);
-const selectedSaleType = ref({});
-const saleTypeOptions = ref([
-    { value: 1, name: 'เงินสด' },
-    { value: 2, name: 'เงินเชื่อ' }
-]);
 
 // ฟังก์ชันโหลดรายการคลัง
 const loadWarehouses = async () => {
@@ -105,49 +95,13 @@ const confirmChangeWarehouse = () => {
     window.location.reload();
 };
 
-// ฟังก์ชันเปิด dialog เปลี่ยนประเภทการขาย
-const openChangeSaleTypeDialog = () => {
-    console.log('Current Sale Type:', saleType.value, saleTypeName.value);
-    selectedSaleType.value = { value: saleType.value, name: saleTypeName.value };
-    showSaleTypeDialog.value = true;
-};
-
-// ฟังก์ชันยืนยันการเปลี่ยนประเภทการขาย
-const confirmChangeSaleType = () => {
-    if (!selectedSaleType.value) {
-        alert('กรุณาเลือกประเภทการขาย');
-        return;
-    }
-    console.log('saleTypeOptions Sale Type Option:', saleTypeOptions.value);
-
-    const selectedOption = saleTypeOptions.value.find((s) => s.value === selectedSaleType.value.value);
-    console.log('Selected Sale Type Option:', selectedOption);
-    // บันทึกข้อมูลประเภทการขายใหม่ลง localStorage
-    localStorage.setItem('_saleType', selectedOption.value.toString());
-    localStorage.setItem('_saleTypeName', selectedOption?.name || '');
-
-    // อัพเดตค่าแสดงผล
-    saleType.value = parseInt(selectedOption.value);
-    saleTypeName.value = selectedOption?.name || '';
-
-    // ปิด dialog
-    showSaleTypeDialog.value = false;
-
-    // รีโหลดหน้าเพื่อให้ข้อมูลอัพเดต
-    // window.location.reload();
-};
-
 // ดึงข้อมูลเมื่อคอมโพเนนต์ถูกโหลด
 onMounted(() => {
-    // ตรวจสอบว่าผู้ใช้เป็นพนักงานหรือไม่
     const userType = localStorage.getItem('_userType');
     isEmployee.value = userType === 'employee';
 
     warehouseCode.value = localStorage.getItem('_warehouseCode') ?? '';
     warehouseName.value = localStorage.getItem('_warehouseName') ?? '';
-    saleTypeName.value = localStorage.getItem('_saleTypeName') || '';
-    console.log('Loaded Sale Type from localStorage:', localStorage.getItem('_saleType'));
-    saleType.value = parseInt(localStorage.getItem('_saleType') || 1);
 
     // ถ้าผู้ใช้เป็นพนักงาน ให้ดึงข้อมูลพนักงาน
     if (isEmployee.value) {
@@ -184,12 +138,6 @@ onMounted(() => {
                 <div class="warehouse-row">
                     <span class="user-name">{{ warehouseCode }} ~ {{ warehouseName }}</span>
                     <Button icon="pi pi-sync" text rounded size="small" @click="openChangeWarehouseDialog" v-tooltip.top="'เปลี่ยนคลัง'" class="change-warehouse-btn" />
-                </div>
-
-                <span class="welcome-text">ประเภทการขาย</span>
-                <div class="warehouse-row">
-                    <span class="user-name">{{ saleTypeName }}</span>
-                    <Button icon="pi pi-sync" text rounded size="small" @click="openChangeSaleTypeDialog" v-tooltip.top="'เปลี่ยนประเภทการขาย'" class="change-warehouse-btn" />
                 </div>
 
                 <span class="welcome-text">พนักงาน</span>
@@ -241,33 +189,6 @@ onMounted(() => {
         </template>
     </Dialog>
 
-    <!-- Dialog เปลี่ยนประเภทการขาย -->
-    <Dialog v-model:visible="showSaleTypeDialog" header="เปลี่ยนประเภทการขาย" :modal="true" :style="{ width: '400px' }" :closable="true">
-        <div class="p-fluid">
-            <div class="field">
-                <label for="saleType" class="font-medium mb-2 block">เลือกประเภทการขาย</label>
-                <Select id="saleType" v-model="selectedSaleType" :options="saleTypeOptions" optionLabel="name" placeholder="เลือกประเภทการขาย" class="w-full">
-                    <template #value="slotProps">
-                        <div v-if="slotProps.value" class="flex items-center">
-                            <i class="pi pi-tag mr-2 text-primary"></i>
-                            <div>{{ slotProps.value.name }}</div>
-                        </div>
-                        <span v-else>{{ slotProps.placeholder }}</span>
-                    </template>
-                    <template #option="slotProps">
-                        <div class="flex flex-column w-full" v-if="slotProps && slotProps.option">
-                            <div class="font-bold">{{ slotProps.option.name }}</div>
-                        </div>
-                    </template>
-                </Select>
-            </div>
-        </div>
-
-        <template #footer>
-            <Button label="ยกเลิก" icon="pi pi-times" severity="secondary" outlined @click="showSaleTypeDialog = false" />
-            <Button label="ยืนยัน" icon="pi pi-check" severity="success" @click="confirmChangeSaleType" :disabled="!selectedSaleType" />
-        </template>
-    </Dialog>
 </template>
 
 <style lang="scss" scoped>

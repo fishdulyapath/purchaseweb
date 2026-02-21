@@ -184,14 +184,9 @@ const totalOrderPrice = computed(() => {
     return total;
 });
 
-// ตรวจสอบว่าสินค้าหมด (ไม่มี location หรือ stock = 0)
-const isOutOfStock = computed(() => {
-    return stockLocations.value.length === 0 || totalStockBalance.value <= 0;
-});
-
 // ตรวจสอบว่าสามารถเพิ่มลงตะกร้าได้หรือไม่
 const canAddToCart = computed(() => {
-    return totalOrderQuantity.value > 0 && !isOutOfStock.value;
+    return totalOrderQuantity.value > 0;
 });
 
 // ตรวจสอบเมื่อ Dialog เปิดและมี itemCode หรือเมื่อ itemCode เปลี่ยน
