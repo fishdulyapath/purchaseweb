@@ -8,7 +8,6 @@ import Card from 'primevue/card';
 import Divider from 'primevue/divider';
 import Galleria from 'primevue/galleria';
 import ProgressSpinner from 'primevue/progressspinner';
-import Tag from 'primevue/tag';
 import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
@@ -18,72 +17,42 @@ const route = useRoute();
 const router = useRouter();
 const product = ref(null);
 const images = ref([]);
-const quantity = ref(1);
 const loading = ref(true);
+const loadingStock = ref(false);
+const addingToCart = ref(false);
 const toast = useToast();
 const cartStore = useCartStore();
 const selectedUnitIndex = ref(0);
+
+// ข้อมูลสต็อกตาม location
+const stockLocations = ref([]);
+// จำนวนสั่งซื้อรวม
+const orderQuantity = ref(0);
 
 const authenStore = useAuthenStore();
 const isLoggedIn = computed(() => authenStore.isAuthenticated);
 
 // สไลด์กาลเลอรี่ responsive options
 const galleryOptions = ref([
-    {
-        breakpoint: '992px',
-        numVisible: 5
-    },
-    {
-        breakpoint: '768px',
-        numVisible: 4
-    },
-    {
-        breakpoint: '576px',
-        numVisible: 3
-    }
+    { breakpoint: '992px', numVisible: 5 },
+    { breakpoint: '768px', numVisible: 4 },
+    { breakpoint: '576px', numVisible: 3 }
 ]);
 
 // ตรวจสอบว่าสินค้านี้อยู่ในตะกร้าหรือไม่
 const isInCart = computed(() => {
-    if (!product.value) return false;
-    return cartStore.isInCart(product.value.id || product.value.code);
+    if (!product.value || !currentUnit.value) return false;
+    const productCode = product.value.id || product.value.code;
+    const unitCode = currentUnit.value.unit_code;
+    return cartStore.cartItems.some((item) => item.item_code === productCode && item.unit_code === unitCode);
 });
 
 // จำนวนที่มีในตะกร้า
 const quantityInCart = computed(() => {
-    if (!product.value) return 0;
-    const item = cartStore.cartItems.find((item) => item.item_code === (product.value.id || product.value.code));
-    return item ? parseInt(item.qty) : 0;
-});
-
-const totalSelectedWithCart = computed(() => {
     if (!product.value || !currentUnit.value) return 0;
-
-    // จำนวนที่กำลังเลือกในหน้าต่างปัจจุบัน
-    const currentlySelected = quantity.value;
-
-    // จำนวนที่มีในตะกร้าแล้ว (ของหน่วยเดียวกัน)
-    const inCartQty = cartStore.cartItems.find((item) => item.item_code === (product.value.id || product.value.code) && item.unit_code === currentUnit.value.unit_code)?.qty || 0;
-
-    // จำนวนรวมทั้งหมด
-    return currentlySelected + parseInt(inCartQty);
-});
-
-// ฟังก์ชันสำหรับตรวจสอบว่าเกินยอดคงเหลือหรือไม่
-const exceedsAvailableStock = computed(() => {
-    if (!currentUnit.value || !currentUnit.value.balance_qty) return false;
-
-    const maxStock = parseInt(currentUnit.value.balance_qty);
-    return maxStock > 0 && totalSelectedWithCart.value > maxStock;
-});
-
-const remainingStockToAdd = computed(() => {
-    if (!currentUnit.value || !currentUnit.value.balance_qty) return 0;
-
-    const maxStock = parseInt(currentUnit.value.balance_qty);
-    const inCartQty = cartStore.cartItems.find((item) => item.item_code === (product.value.id || product.value.code) && item.unit_code === currentUnit.value.unit_code)?.qty || 0;
-
-    return Math.max(0, maxStock - parseInt(inCartQty));
+    const productCode = product.value.id || product.value.code;
+    const unitCode = currentUnit.value.unit_code;
+    return cartStore.cartItems.filter((item) => item.item_code === productCode && item.unit_code === unitCode).reduce((total, item) => total + parseInt(item.qty || 0), 0);
 });
 
 // หน่วยสินค้าที่กำลังเลือก
@@ -97,18 +66,25 @@ const currentUnit = computed(() => {
             price: product.value.price,
             sold_out: product.value.sold_out,
             balance_qty: product.value.balance_qty,
+            minimum_qty: product.value.minimum_qty,
+            maximum_qty: product.value.maximum_qty,
             sum_sale: product.value.sum_sale
         };
     } else {
         unit = product.value.otherUnits[selectedUnitIndex.value - 1];
     }
 
-    // Check if balance_qty is 0, set sold_out to '1'
-    if (unit.balance_qty === '0' || parseFloat(unit.balance_qty) === 0) {
-        unit.sold_out = '1';
-    }
-
     return unit;
+});
+
+// คำนวณยอดรวมคงเหลือจากทุก location
+const totalStockBalance = computed(() => {
+    return stockLocations.value.reduce((sum, loc) => sum + parseFloat(loc.balance_qty || 0), 0);
+});
+
+// ตรวจสอบว่าสามารถเพิ่มลงตะกร้าได้หรือไม่
+const canAddToCart = computed(() => {
+    return orderQuantity.value > 0;
 });
 
 function goToLogin() {
@@ -130,12 +106,7 @@ onMounted(async () => {
         await fetchProductDetail();
     } catch (error) {
         console.error('Error fetching data:', error);
-        toast.add({
-            severity: 'error',
-            summary: 'เกิดข้อผิดพลาด',
-            detail: 'ไม่สามารถโหลดข้อมูลสินค้าได้',
-            life: 3000
-        });
+        toast.add({ severity: 'error', summary: 'เกิดข้อผิดพลาด', detail: 'ไม่สามารถโหลดข้อมูลสินค้าได้', life: 3000 });
     } finally {
         loading.value = false;
     }
@@ -145,105 +116,76 @@ onMounted(async () => {
 async function fetchProductDetail() {
     const itemCode = route.params.id;
     if (!itemCode) {
-        toast.add({
-            severity: 'error',
-            summary: 'เกิดข้อผิดพลาด',
-            detail: 'ไม่พบรหัสสินค้า',
-            life: 3000
-        });
+        toast.add({ severity: 'error', summary: 'เกิดข้อผิดพลาด', detail: 'ไม่พบรหัสสินค้า', life: 3000 });
         return;
     }
 
     try {
         const result = await ProductService.getProductByItemCode(itemCode);
-
-        // Process the data to set sold_out based on balance_qty
-        if (result.data) {
-            // Check main product
-            if (result.data.balance_qty === '0' || parseFloat(result.data.balance_qty) === 0) {
-                result.data.sold_out = '1';
-            }
-
-            // Check other units if available
-            if (result.data.otherUnits && result.data.otherUnits.length > 0) {
-                result.data.otherUnits.forEach((unit) => {
-                    if (unit.balance_qty === '0' || parseFloat(unit.balance_qty) === 0) {
-                        unit.sold_out = '1';
-                    }
-                });
-            }
-        }
-
         product.value = result.data;
 
-        // สร้างรูปภาพสำหรับแกลลอรี่
-        const mainImage = {
-            itemImageSrc: product.value.image,
-            thumbnailImageSrc: product.value.image,
-            alt: product.value.name
-        };
-
-        // ถ้ามีหลายหน่วย ให้สร้างรูปภาพเดียวกันหลายๆ รูป
-        images.value = [mainImage];
-
-        // จำลองรูปภาพเพิ่มเติม (เพื่อให้แกลลอรี่ดูดีขึ้น) - ในสถานการณ์จริงควรใช้รูปภาพจริงของสินค้า
-        if (product.value.otherUnits && product.value.otherUnits.length > 0) {
-            // เพิ่มรูปภาพเดียวกันอีก 1-2 รูป เพื่อให้แกลลอรี่ดูดีขึ้น
-            images.value.push(mainImage);
-        }
+        // ดึงรูปภาพ
+        await fetchProductImages();
+        // ดึงสต็อก
+        await fetchProductStock();
     } catch (error) {
         console.error('Error fetching product detail:', error);
-        toast.add({
-            severity: 'error',
-            summary: 'เกิดข้อผิดพลาด',
-            detail: 'ไม่สามารถโหลดข้อมูลสินค้าได้',
-            life: 3000
-        });
+        toast.add({ severity: 'error', summary: 'เกิดข้อผิดพลาด', detail: 'ไม่สามารถโหลดข้อมูลสินค้าได้', life: 3000 });
     }
 }
 
-function incrementQuantity() {
-    if (product.value && currentUnit.value && currentUnit.value.sold_out !== '1') {
-        // ตรวจสอบว่าจำนวนที่จะเพิ่ม + จำนวนที่มีในตะกร้าแล้ว ไม่เกินจำนวนคงเหลือ
-        if (exceedsAvailableStock.value || quantity.value >= remainingStockToAdd.value) {
-            // ถ้าเกินแล้ว ไม่ให้เพิ่ม และแจ้งเตือนผู้ใช้
-            const inCartQty = cartStore.cartItems.find((item) => item.item_code === (product.value.id || product.value.code) && item.unit_code === currentUnit.value.unit_code)?.qty || 0;
+// ดึงรายการรูปภาพของสินค้า
+async function fetchProductImages() {
+    if (!product.value || !product.value.code) {
+        images.value = [{ itemImageSrc: ProductService.getPlaceholderImage(), thumbnailImageSrc: ProductService.getPlaceholderImage(), alt: product.value ? product.value.name : 'สินค้า' }];
+        return;
+    }
 
-            if (inCartQty > 0) {
-                toast.add({
-                    severity: 'info',
-                    summary: 'ข้อมูลสต็อก',
-                    detail: `คุณมีสินค้านี้ในตะกร้าแล้ว ${inCartQty} ${currentUnit.value.unit_code} สามารถเพิ่มได้อีกเพียง ${remainingStockToAdd.value} ${currentUnit.value.unit_code}`,
-                    life: 3000
-                });
-            } else {
-                toast.add({
-                    severity: 'info',
-                    summary: 'ข้อมูลสต็อก',
-                    detail: `ไม่สามารถเพิ่มเกินสต็อกได้ สินค้าคงเหลือมีจำนวน ${currentUnit.value.balance_qty} ${currentUnit.value.unit_code}`,
-                    life: 3000
-                });
-            }
-            return;
+    try {
+        const imageList = await ProductService.getImageList(product.value.code);
+        if (imageList && imageList.length > 0) {
+            images.value = imageList.map((imageData) => ({
+                itemImageSrc: ProductService.getProductImageByGuid(imageData.guid_code),
+                thumbnailImageSrc: ProductService.getProductImageByGuid(imageData.guid_code),
+                alt: product.value.name,
+                guid_code: imageData.guid_code
+            }));
+        } else {
+            images.value = [{ itemImageSrc: ProductService.getPlaceholderImage(), thumbnailImageSrc: ProductService.getPlaceholderImage(), alt: product.value.name }];
         }
-
-        quantity.value++;
+    } catch (error) {
+        console.error('Error fetching product images:', error);
+        images.value = [{ itemImageSrc: ProductService.getPlaceholderImage(), thumbnailImageSrc: ProductService.getPlaceholderImage(), alt: product.value.name }];
     }
 }
 
-function decrementQuantity() {
-    if (quantity.value > 1) {
-        quantity.value--;
+// ดึงข้อมูลสต็อกตาม location
+async function fetchProductStock() {
+    if (!product.value || !product.value.code || !currentUnit.value) return;
+
+    loadingStock.value = true;
+    try {
+        const result = await ProductService.getProductStock(product.value.code, currentUnit.value.unit_code);
+        stockLocations.value = result.data && result.data.length > 0 ? result.data : [];
+    } catch (error) {
+        console.error('Error fetching product stock:', error);
+        stockLocations.value = [];
+    } finally {
+        loadingStock.value = false;
     }
 }
 
 function addToCart() {
-    if (!product.value) return;
+    if (!product.value || !canAddToCart.value) return;
 
-    // เตรียมข้อมูลสินค้าสำหรับเพิ่มลงตะกร้า
     const unit = currentUnit.value;
+    const qty = parseInt(orderQuantity.value) || 0;
+    if (qty <= 0) return;
+
+    addingToCart.value = true;
+
     const cartItem = {
-        id: product.value.id || product.value.code,
+        id: `${product.value.code}_${unit.unit_code}`,
         item_code: product.value.code,
         code: product.value.code,
         name: product.value.name,
@@ -254,92 +196,34 @@ function addToCart() {
         unit: unit.unit_code,
         unit_code: unit.unit_code,
         barcode: product.value.barcode || '',
-        wh_code: product.value.wh_code || '',
-        shelf_code: product.value.shelf_code || ''
+        wh_code: localStorage.getItem('_warehouseCode') || '',
+        shelf_code: '',
+        location_name: ''
     };
 
-    // แสดงการโหลดหรือปิดการใช้งานปุ่มขณะกำลังเพิ่มสินค้า
-    loading.value = true;
-
-    // ตรวจสอบว่าสินค้านี้มีในตะกร้าแล้วหรือไม่ โดยเช็คทั้ง item_code และ unit_code
     const existingCartItem = cartStore.cartItems.find((item) => item.item_code === cartItem.item_code && item.unit_code === cartItem.unit_code);
-
-    let finalQty = quantity.value;
-
-    console.log('===== ADD TO CART DEBUG LOGS =====');
-    console.log('สินค้าที่ต้องการเพิ่ม:', cartItem.item_name, `(${cartItem.unit_code})`);
-    console.log('จำนวนที่ต้องการเพิ่มในครั้งนี้:', quantity.value);
-
-    // ถ้ามีสินค้านี้ในตะกร้าแล้ว ให้เพิ่มจำนวนเดิม + จำนวนที่ต้องการเพิ่ม
-    if (existingCartItem) {
-        console.log('พบสินค้านี้ในตะกร้าแล้ว!');
-        console.log('จำนวนเดิมในตะกร้า:', existingCartItem.qty);
-        finalQty = parseInt(existingCartItem.qty) + quantity.value;
-        console.log('จำนวนรวมหลังเพิ่ม:', finalQty);
-
-        // อัพเดทค่า cartItem.qty เพื่อให้ไปแสดงใน toast
-        cartItem.qty = finalQty;
-    } else {
-        console.log('ไม่พบสินค้านี้ในตะกร้า เพิ่มเป็นรายการใหม่');
-        console.log('จำนวนที่จะเพิ่ม:', finalQty);
-    }
-
-    // ตรวจสอบว่าจำนวนรวมไม่เกินสต็อกคงเหลือ
-    const stockBalance = parseInt(unit.balance_qty) || 0;
-    if (stockBalance > 0 && finalQty > stockBalance) {
-        loading.value = false;
-        toast.add({
-            severity: 'error',
-            summary: 'เกินจำนวนสต็อก',
-            detail: `ไม่สามารถเพิ่มได้ เนื่องจากเกินจำนวนสินค้าคงเหลือ (${stockBalance} ${unit.unit_code})`,
-            life: 3000
-        });
-        return;
-    }
-
-    console.log('รายการสินค้าในตะกร้าปัจจุบัน:', cartStore.cartItems.length, 'รายการ');
-    console.log('==============================');
+    const finalQty = existingCartItem ? parseInt(existingCartItem.qty) + qty : qty;
 
     cartStore
-        .addToCart(cartItem, finalQty)
+        .addMultipleToCart([{ ...cartItem, qty: finalQty }])
         .then(() => {
-            toast.add({
-                severity: 'success',
-                summary: 'เพิ่มสินค้าแล้ว',
-                detail: `${product.value.name} (${unit.unit_code}) x ${finalQty}`,
-                life: 3000
-            });
-
-            // เพิ่ม log หลังจากเพิ่มสินค้าสำเร็จ
-            console.log('===== AFTER ADD TO CART =====');
-            console.log('การเพิ่มสินค้าสำเร็จ!');
-            console.log('จำนวนรายการในตะกร้าหลังเพิ่ม:', cartStore.cartItems.length);
-            console.log('จำนวนชิ้นสินค้าทั้งหมดในตะกร้า:', cartStore.totalItems);
-            console.log('============================');
+            orderQuantity.value = 0;
         })
         .catch((err) => {
             console.error('Error adding to cart:', err);
-            toast.add({
-                severity: 'error',
-                summary: 'เกิดข้อผิดพลาด',
-                detail: 'ไม่สามารถเพิ่มสินค้าลงตะกร้าได้',
-                life: 3000
-            });
-
-            // เพิ่ม log เมื่อเกิดข้อผิดพลาด
-            console.error('===== ADD TO CART ERROR =====');
-            console.error('ข้อผิดพลาด:', err);
-            console.error('==============================');
+            toast.add({ severity: 'error', summary: 'เกิดข้อผิดพลาด', detail: 'ไม่สามารถเพิ่มสินค้าลงตะกร้าได้', life: 3000 });
         })
         .finally(() => {
-            loading.value = false;
+            addingToCart.value = false;
         });
 }
+
 // เปลี่ยนหน่วยสินค้า
-function changeUnit(index) {
+async function changeUnit(index) {
     selectedUnitIndex.value = index;
-    // รีเซ็ตจำนวนเมื่อเปลี่ยนหน่วย
-    quantity.value = 1;
+    stockLocations.value = [];
+    orderQuantity.value = 0;
+    await fetchProductStock();
 }
 
 function goBack() {
@@ -350,31 +234,22 @@ function goBack() {
 function toggleFavorite() {
     if (!product.value) return;
 
-    // เก็บค่า favorite_item เดิมไว้
     const oldFavoriteStatus = product.value.favorite_item || '0';
-
-    // สลับค่า favorite_item ระหว่าง "0" และ "1"
     product.value.favorite_item = product.value.favorite_item === '1' ? '0' : '1';
 
-    toast.add({
-        severity: 'success',
-        summary: product.value.favorite_item === '1' ? 'เพิ่มในรายการโปรด' : 'นำออกจากรายการโปรด',
-        detail: product.value.favorite_item === '1' ? `เพิ่ม ${product.value.name} ในรายการโปรดแล้ว` : `นำ ${product.value.name} ออกจากรายการโปรดแล้ว`,
-        life: 3000
-    });
-
-    // เรียกใช้งาน API เพื่ออัปเดตสถานะรายการโปรด
     ProductService.updateFavoriteStatus(product.value.id || product.value.code, product.value.favorite_item).catch((error) => {
         console.error('Error updating favorite status:', error);
-        // กรณีมีข้อผิดพลาด ให้คืนค่าสถานะเดิม
         product.value.favorite_item = oldFavoriteStatus;
-        toast.add({
-            severity: 'error',
-            summary: 'เกิดข้อผิดพลาด',
-            detail: 'ไม่สามารถอัปเดตสถานะรายการโปรดได้',
-            life: 3000
-        });
+        toast.add({ severity: 'error', summary: 'เกิดข้อผิดพลาด', detail: 'ไม่สามารถอัปเดตสถานะรายการโปรดได้', life: 3000 });
     });
+}
+
+function handleQuantityKeydown(event) {
+    const isNumber = /^[0-9]$/.test(event.key);
+    const isControl = ['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight'].includes(event.key);
+    if (!isNumber && !isControl) {
+        event.preventDefault();
+    }
 }
 </script>
 
@@ -401,27 +276,33 @@ function toggleFavorite() {
         </div>
 
         <div v-else-if="product" class="pb-20 sm:pb-24">
-            <!-- Product content - Flex layout for md screens -->
+            <!-- Product content -->
             <div class="md:flex">
-                <!-- Product gallery - Full width on sm, 50% width on md -->
-                <div class="md:w-1/2 relative pt-2 sm:p-5 md:p-6 md:w-1/2">
-                    <Galleria v-if="images.length > 0" :value="images" :numVisible="5" :circular="true" :showThumbnails="false" :showItemNavigators="false" :responsiveOptions="galleryOptions" containerClass="w-full">
+                <!-- Product gallery -->
+                <div class="md:w-1/2 relative pt-2 sm:p-5 md:p-6">
+                    <Galleria
+                        v-if="images.length > 0"
+                        :value="images"
+                        :numVisible="4"
+                        :circular="true"
+                        :showThumbnails="images.length > 1"
+                        :showItemNavigators="images.length > 1"
+                        :responsiveOptions="galleryOptions"
+                        containerClass="w-full"
+                    >
                         <template #item="slotProps">
-                            <img :src="slotProps.item.itemImageSrc" :alt="slotProps.item.alt" @error="$event.target.src = product.imageFallback" class="w-full object-cover sm:object-contain" style="max-height: 300px; height: 300px" />
+                            <div class="flex justify-center items-center bg-gray-50 dark:bg-gray-800 rounded-lg" style="height: 300px">
+                                <img :src="slotProps.item.itemImageSrc" :alt="slotProps.item.alt" @error="$event.target.src = ProductService.getPlaceholderImage()" class="max-w-full max-h-full object-contain rounded-lg" style="max-height: 280px" />
+                            </div>
                         </template>
                         <template #thumbnail="slotProps">
-                            <img :src="slotProps.item.thumbnailImageSrc" :alt="slotProps.item.alt" @error="$event.target.src = product.imageFallback" class="rounded-sm object-cover" style="width: 70px; height: 40px" />
+                            <img :src="slotProps.item.thumbnailImageSrc" :alt="slotProps.item.alt" @error="$event.target.src = ProductService.getPlaceholderImage()" class="rounded-sm object-cover" style="width: 70px; height: 50px" />
                         </template>
                     </Galleria>
 
                     <!-- ถ้าไม่มีรูปภาพ ให้แสดงรูปภาพสำรอง -->
                     <div v-else class="w-full h-[300px] flex items-center justify-center bg-gray-100 dark:bg-gray-800">
-                        <img :src="product.imageFallback" :alt="product.name" class="max-h-[250px] max-w-full object-contain" />
-                    </div>
-
-                    <!-- Tags positioned on the gallery -->
-                    <div class="absolute top-3 left-3 flex flex-col gap-2">
-                        <Tag v-if="currentUnit" :value="currentUnit.sold_out === '1' ? 'สินค้าหมด' : 'มีสินค้า'" :severity="currentUnit.sold_out === '1' ? 'danger' : 'success'" class="text-xs sm:text-sm" />
+                        <img :src="ProductService.getPlaceholderImage()" :alt="product.name" class="max-h-[250px] max-w-full object-contain" />
                     </div>
                 </div>
 
@@ -430,111 +311,117 @@ function toggleFavorite() {
                     <Card class="product-info-card shadow-sm border-none">
                         <template #content>
                             <div class="mb-4">
-                                <div class="text-sm sm:text-base md:text-lg text-gray-500 dark:text-gray-400">
+                                <div class="text-sm sm:text-base text-gray-500 dark:text-gray-400">
                                     รหัสสินค้า: <span class="font-medium">{{ product.code }}</span>
                                 </div>
-                                <h2 class="text-xl sm:text-2xl md:text-3xl font-bold mt-2">{{ product.name }}</h2>
+                                <h2 class="text-xl sm:text-2xl font-bold mt-2">{{ product.name }}</h2>
                             </div>
 
                             <Divider />
 
-                            <!-- ถ้ามีหลายหน่วยให้แสดงตัวเลือกหน่วย -->
-                            <div v-if="product.otherUnits && product.otherUnits.length > 0" class="mb-4">
-                                <div class="text-base sm:text-lg font-medium mb-3">เลือกหน่วย:</div>
+                            <!-- เลือกหน่วย -->
+                            <div class="mb-3">
+                                <div class="text-base font-medium mb-2">เลือกหน่วย:</div>
                                 <div class="flex flex-wrap gap-2">
-                                    <!-- ปุ่มเลือกหน่วยหลัก -->
-                                    <Button :label="product.unit_code" :outlined="selectedUnitIndex !== 0" @click="changeUnit(0)" class="text-base" size="small" />
-
-                                    <!-- ปุ่มเลือกหน่วยอื่นๆ -->
-                                    <Button v-for="(unitItem, idx) in product.otherUnits" :key="idx" :label="unitItem.unit_code" :outlined="selectedUnitIndex !== idx + 1" @click="changeUnit(idx + 1)" class="text-base" size="small" />
+                                    <Button :label="product.unit_code" :outlined="selectedUnitIndex !== 0" @click="changeUnit(0)" class="text-md" />
+                                    <Button v-for="(unitItem, idx) in product.otherUnits" :key="idx" :label="unitItem.unit_code" :outlined="selectedUnitIndex !== idx + 1" @click="changeUnit(idx + 1)" class="text-sm" size="small" />
                                 </div>
                             </div>
 
-                            <div v-if="currentUnit && currentUnit.sold_out === '1'" class="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 p-3 rounded-lg text-base sm:text-lg mb-4 flex items-center">
-                                <i class="pi pi-exclamation-triangle mr-2"></i>
-                                <span>สินค้าหน่วยนี้หมด ไม่สามารถสั่งซื้อได้</span>
+                            <!-- ราคา / Min / Max ตามหน่วยที่เลือก -->
+                            <div v-if="currentUnit" class="mb-4 text-sm text-gray-700 dark:text-gray-300 flex flex-wrap gap-4">
+                                <span>ราคา: <strong class="text-primary">฿{{ parseFloat(currentUnit.price || 0).toLocaleString() }}</strong> / {{ currentUnit.unit_code }}</span>
+                                <span>สั่งซื้อต่ำสุด: <strong>{{ parseFloat(currentUnit.minimum_qty) > 0 ? formatNumber(parseFloat(currentUnit.minimum_qty)) : '-' }}</strong></span>
+                                <span>สั่งซื้อสูงสุด: <strong>{{ parseFloat(currentUnit.maximum_qty) > 0 ? formatNumber(parseFloat(currentUnit.maximum_qty)) : '-' }}</strong></span>
                             </div>
-                            <!-- Price section -->
-                            <div class="flex items-center mb-4 mt-5" v-if="currentUnit">
-                                <!-- แสดงราคาเฉพาะเมื่อเข้าสู่ระบบแล้วเท่านั้น -->
-                                <template v-if="isLoggedIn">
-                                    <span class="text-2xl sm:text-3xl md:text-4xl font-bold text-primary"> ฿{{ parseFloat(currentUnit.price).toLocaleString() }} </span>
-                                    <span class="text-base sm:text-lg text-gray-500 ml-2"> / {{ currentUnit.unit_code }} </span>
-                                </template>
 
-                                <!-- แสดงข้อความแทนเมื่อยังไม่ได้เข้าสู่ระบบ -->
-                                <template v-else>
-                                    <div class="bg-gray-50 dark:bg-gray-800/30 p-3 rounded-lg w-full text-center">
-                                        <i class="pi pi-lock mr-2"></i>
-                                        <span class="text-base">กรุณาเข้าสู่ระบบเพื่อดูราคา</span>
-                                        <Button icon="pi pi-sign-in" label="เข้าสู่ระบบ" @click="goToLogin" class="mt-2 ml-2 p-button-sm" />
-                                    </div>
-                                </template>
+                            <!-- Loading stock -->
+                            <div v-if="loadingStock" class="flex flex-col justify-center items-center p-4 bg-gray-50 dark:bg-gray-800/30 rounded-lg mb-4">
+                                <ProgressSpinner style="width: 36px; height: 36px" />
+                                <span class="mt-2 text-gray-500 dark:text-gray-400 text-sm">กำลังโหลดข้อมูลสต็อก...</span>
                             </div>
 
                             <!-- In cart badge -->
-                            <div v-if="isInCart" class="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 p-3 rounded-lg text-base sm:text-lg mb-4 flex items-center">
+                            <div v-if="isInCart" class="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 p-3 rounded-lg text-base mb-4 flex items-center">
                                 <i class="pi pi-info-circle mr-2"></i>
                                 <span>มีในตะกร้าแล้ว <Badge :value="quantityInCart" severity="info" class="ml-1"></Badge></span>
                             </div>
 
-                            <div class="product-stats grid grid-cols-2 gap-4 mb-4">
-                                <!-- คงเหลือ -->
-                                <div v-if="currentUnit" class="text-base sm:text-lg text-gray-600 dark:text-gray-300 p-3 bg-gray-50 dark:bg-gray-800/30 rounded-lg">
-                                    <div class="font-medium mb-1">คงเหลือ:</div>
-                                    <div :class="parseFloat(currentUnit.balance_qty) < 0 ? 'text-red-500 font-medium' : 'font-medium'">{{ formatNumber(currentUnit.balance_qty) }} {{ currentUnit.unit_code }}</div>
-                                </div>
-
-                                <!--ยอดขาย -->
-                                <div v-if="currentUnit" class="text-base sm:text-lg text-gray-600 dark:text-gray-300 p-3 bg-gray-50 dark:bg-gray-800/30 rounded-lg">
-                                    <div class="font-medium mb-1">ยอดขาย:</div>
-                                    <div :class="parseFloat(currentUnit.sum_sale) < 0 ? 'text-red-500 font-medium' : 'font-medium'">{{ formatNumber(currentUnit.sum_sale) }} {{ currentUnit.unit_code }}</div>
+                            <!-- Stock locations table - แสดงยอดคงเหลือตามที่เก็บ -->
+                            <div class="mb-4" v-if="isLoggedIn && stockLocations.length > 0">
+                                <div class="text-base font-medium mb-2">ยอดคงเหลือตามที่เก็บ:</div>
+                                <div class="bg-gray-50 dark:bg-gray-800/30 rounded-lg overflow-hidden">
+                                    <!-- Header -->
+                                    <div class="grid grid-cols-2 gap-2 p-3 bg-gray-100 dark:bg-gray-700 font-medium text-sm">
+                                        <div class="text-center">ที่เก็บ</div>
+                                        <div class="text-center">คงเหลือ</div>
+                                    </div>
+                                    <!-- Rows -->
+                                    <div
+                                        v-for="(loc, index) in stockLocations"
+                                        :key="loc.location"
+                                        :class="['grid grid-cols-2 gap-2 p-3 items-center', index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50']"
+                                    >
+                                        <div class="text-center">
+                                            <span class="font-medium text-xs text-gray-700 dark:text-gray-300">{{ loc.warehouse_name }} | {{ loc.location_name }}</span>
+                                        </div>
+                                        <div class="text-center">
+                                            <span class="font-medium">{{ parseInt(loc.balance_qty) }}</span>
+                                        </div>
+                                    </div>
+                                    <!-- Total -->
+                                    <div class="grid grid-cols-2 gap-2 p-3 bg-gray-100 dark:bg-gray-700 font-medium border-t text-sm">
+                                        <div class="text-center">รวม</div>
+                                        <div class="text-center">{{ totalStockBalance }}</div>
+                                    </div>
                                 </div>
                             </div>
 
-                            <!-- Short description -->
-                            <div class="mb-6 mt-4 bg-gray-50 dark:bg-gray-800/30 p-3 rounded-lg">
-                                <div class="text-base sm:text-lg font-medium mb-2">รายละเอียด</div>
-                                <p class="text-base sm:text-lg text-gray-600 dark:text-gray-300 whitespace-pre-line">
-                                    {{ product.description || 'ไม่มีคำอธิบายสำหรับสินค้านี้' }}
-                                </p>
+                            <!-- จำนวนสั่งซื้อ -->
+                            <div class="mb-4" v-if="isLoggedIn">
+                                <div class="text-base font-medium mb-2">จำนวนสั่งซื้อ:</div>
+                                <div class="flex items-center gap-2">
+                                    <Button
+                                        icon="pi pi-minus"
+                                        text
+                                        rounded
+                                        size="small"
+                                        @click="orderQuantity > 0 ? orderQuantity-- : null"
+                                        :disabled="orderQuantity <= 0"
+                                        class="w-10 h-10 border border-gray-300 dark:border-gray-600"
+                                    />
+                                    <input
+                                        type="text"
+                                        v-model="orderQuantity"
+                                        class="w-20 text-center font-medium text-lg border border-gray-300 dark:border-gray-600 rounded px-2 py-2 bg-white dark:bg-gray-700"
+                                        @keydown="handleQuantityKeydown"
+                                    />
+                                    <Button
+                                        icon="pi pi-plus"
+                                        text
+                                        rounded
+                                        size="small"
+                                        @click="orderQuantity++"
+                                        class="w-10 h-10 border border-gray-300 dark:border-gray-600"
+                                    />
+                                    <span class="text-gray-500 text-sm ml-1">{{ currentUnit?.unit_code }}</span>
+                                </div>
                             </div>
 
                             <Divider />
 
-                            <!-- Quantity Selector & Add to Cart Button -->
-                            <div class="mb-6" v-if="currentUnit && currentUnit.sold_out !== '1'">
-                                <div class="text-xs sm:text-sm font-medium mb-2">จำนวน</div>
-                                <div class="flex items-center w-full max-w-[200px]">
-                                    <Button icon="pi pi-minus" text rounded @click="decrementQuantity" :disabled="quantity <= 1" class="border border-gray-300 dark:border-gray-700 w-10 h-10 flex items-center justify-center" />
-                                    <div class="mx-3 font-medium text-center w-12 text-lg">{{ quantity }}</div>
-                                    <Button icon="pi pi-plus" text rounded @click="incrementQuantity" :disabled="quantity >= remainingStockToAdd" class="border border-gray-300 dark:border-gray-700 w-10 h-10 flex items-center justify-center" />
-                                </div>
-
-                                <!-- แสดงข้อความสำหรับสินค้าที่มีในตะกร้าแล้ว -->
-                                <div v-if="isInCart && quantityInCart > 0" class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                                    มีในตะกร้าแล้ว: <span class="font-medium">{{ quantityInCart }}</span> {{ currentUnit.unit_code }}
-                                    <span v-if="remainingStockToAdd > 0">
-                                        (สามารถเพิ่มได้อีก: <span class="font-medium">{{ remainingStockToAdd }}</span> {{ currentUnit.unit_code }})</span
-                                    >
-                                    <span v-else class="text-red-500"> (ไม่สามารถเพิ่มได้อีก)</span>
-                                </div>
-                            </div>
-
-                            <!-- Add to Cart Button -->
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <!-- กรณีเข้าสู่ระบบแล้ว แสดงปุ่มเพิ่มลงตะกร้า -->
+                            <!-- Action Buttons -->
+                            <div class="gap-3 mt-4">
                                 <Button
                                     v-if="isLoggedIn"
                                     icon="pi pi-shopping-cart"
-                                    label="เพิ่มลงตะกร้า"
+                                    :label="`เพิ่มลงตะกร้า${orderQuantity > 0 ? ' (' + orderQuantity + ')' : ''}`"
                                     @click="addToCart"
-                                    :disabled="(currentUnit && currentUnit.sold_out === '1') || exceedsAvailableStock || quantity > remainingStockToAdd || quantity <= 0"
-                                    class="w-full p-button-lg flex items-center justify-center"
+                                    :disabled="!canAddToCart"
+                                    :loading="addingToCart"
+                                    class="w-full flex items-center justify-center"
                                 />
-
-                                <!-- กรณียังไม่ได้เข้าสู่ระบบ แสดงปุ่มเข้าสู่ระบบ -->
-                                <Button v-else icon="pi pi-sign-in" label="เข้าสู่ระบบเพื่อสั่งซื้อ" @click="goToLogin" class="w-full p-button-lg p-button-outlined flex items-center justify-center" />
+                                <Button v-else icon="pi pi-sign-in" label="เข้าสู่ระบบเพื่อสั่งซื้อ" @click="goToLogin" class="w-full p-button-outlined flex items-center justify-center" />
                             </div>
                         </template>
                     </Card>

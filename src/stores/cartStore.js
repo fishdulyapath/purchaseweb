@@ -482,7 +482,7 @@ export const useCartStore = defineStore('cart', () => {
             // สร้างข้อมูลสำหรับส่งไป API
             const orderData = {
                 cust_code: localStorage.getItem('_userCode') || '',
-                emp_code: checkoutData.employeeCode || '',
+                emp_code: localStorage.getItem('_empCode') || '',
                 doc_date: formattedDate,
                 doc_time: formattedTime,
                 doc_no: docNo,

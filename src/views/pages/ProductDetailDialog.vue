@@ -388,7 +388,7 @@ function addToCart() {
     };
 
     const existingCartItem = cartStore.cartItems.find((item) => item.item_code === cartItem.item_code && item.unit_code === cartItem.unit_code);
-    const finalQty = existingCartItem ? parseInt(existingCartItem.qty) + qty : qty;
+    const finalQty = existingCartItem ? parseInt(existingCartItem.qty) + parseInt(qty) : parseInt(qty);
 
     cartStore
         .addMultipleToCart([{ ...cartItem, qty: finalQty }])

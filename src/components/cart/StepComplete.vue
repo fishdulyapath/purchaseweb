@@ -51,31 +51,22 @@ const displayOrderTime = ref(
             <i class="pi pi-check-circle text-4xl"></i>
         </div>
 
-        <h2 class="text-2xl font-bold mb-2">สั่งซื้อสำเร็จ</h2>
-        <p class="text-gray-600 dark:text-gray-400 mb-6">ขอบคุณสำหรับการสั่งซื้อสินค้ากับเรา</p>
+        <h2 class="text-2xl font-bold mb-2">เสนอซื้อสำเร็จ</h2>
+        <p class="text-gray-600 dark:text-gray-400 mb-6">รอการตรวจสอบจากผู้ดูแลระบบ</p>
 
         <div class="w-full max-w-md bg-gray-50 dark:bg-gray-900 p-6 rounded-lg mb-6">
             <div class="text-left mb-4">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-gray-600 dark:text-gray-400">เลขที่คำสั่งซื้อ:</span>
+                    <span class="text-gray-600 dark:text-gray-400">เลขที่:</span>
                     <span class="font-bold">{{ displayOrderNumber }}</span>
                 </div>
                 <div class="flex justify-between items-center">
-                    <span class="text-gray-600 dark:text-gray-400">วันเวลาที่สั่งซื้อ:</span>
+                    <span class="text-gray-600 dark:text-gray-400">วันเวลาที่:</span>
                     <span>{{ displayOrderDate }} {{ displayOrderTime }} น.</span>
                 </div>
             </div>
-
-            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg">
-                <h3 class="font-bold text-lg mb-3">ข้อมูลเพิ่มเติม</h3>
-                <ul class="space-y-2 text-left list-disc pl-5">
-                    <li>คุณสามารถตรวจสอบสถานะคำสั่งซื้อได้ที่หน้า "ประวัติการสั่งซื้อ"</li>
-                    <li>สำหรับการรับที่ร้าน กรุณาแสดงเลขที่คำสั่งซื้อกับพนักงาน</li>
-                    <li>หากมีข้อสงสัยเพิ่มเติม กรุณาติดต่อ 02-1147931 ต่อ 116</li>
-                </ul>
-            </div>
         </div>
 
-        <Button label="กลับสู่หน้าร้านค้า" icon="pi pi-shopping-bag" @click="emit('go-to-shop')" />
+        <Button label="กลับสู่หน้ารายการสินค้า" icon="pi pi-shopping-bag" @click="emit('go-to-shop')" />
     </div>
 </template>

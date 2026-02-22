@@ -376,8 +376,6 @@ function redirectToLogin() {
             <div class="flex justify-between items-center p-3 sm:p-4 bg-white dark:bg-gray-800 shadow-sm rounded-t-lg">
                 <h1 class="text-xl sm:text-2xl font-bold">
                     ตะกร้าสินค้า
-                    <span v-if="userType === 'customer'" class="text-sm text-primary-500">(ลูกค้า)</span>
-                    <span v-else-if="userType === 'employee'" class="text-sm text-orange-500">(พนักงาน)</span>
                 </h1>
                 <Button v-if="activeStep === 0" icon="pi pi-arrow-left" label="เลือกซื้อสินค้าต่อ" text @click="goToShop" class="hidden sm:flex" />
             </div>

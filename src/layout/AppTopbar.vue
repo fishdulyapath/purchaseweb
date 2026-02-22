@@ -327,11 +327,10 @@ function handleImageError(event) {
 
                         <div v-else>
                             <div class="max-h-72 overflow-y-auto">
-                                <router-link
+                                <div
                                     v-for="item in recentItems"
                                     :key="item.id"
-                                    :to="`/product-detail/${item.id}`"
-                                    class="flex items-center py-3 border-b border-gray-100 dark:border-gray-700 no-underline text-inherit hover:bg-gray-50 dark:hover:bg-gray-700"
+                                    class="flex items-center py-3 border-b border-gray-100 dark:border-gray-700 text-inherit"
                                 >
                                     <div class="w-12 h-12 mr-3 rounded overflow-hidden border border-gray-200 dark:border-gray-700 flex-shrink-0">
                                         <img :src="getProductImage(item.item_code)" :alt="item.item_code" class="w-full h-full object-contain cursor-pointer" @error="handleImageError" />
@@ -340,14 +339,14 @@ function handleImageError(event) {
                                         <div class="text-sm font-medium mb-1 truncate max-w-[180px]">
                                             {{ item.item_name }}
                                         </div>
-                                        <div class="text-xs text-gray-500 dark:text-gray-400"><span style="color:red">[{{item.shelf_code}}]</span>  {{ item.qty }} x ฿ {{ formatTotal(item.price) }}</div>
+                                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ item.qty }} x ฿ {{ formatTotal(item.price) }}</div>
                                     </div>
 
                                     <!-- ปุ่มลบแยกออกมาจาก router-link -->
                                     <button class="bg-transparent border-0 cursor-pointer p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" @click="removeItem(item.id, $event)">
                                         <i class="pi pi-times text-xs"></i>
                                     </button>
-                                </router-link>
+                                </div>
                             </div>
 
                             <div v-if="hiddenItemsCount > 0" class="text-center text-xs text-gray-500 py-2 italic">และอีก {{ hiddenItemsCount }} รายการ</div>
@@ -357,9 +356,9 @@ function handleImageError(event) {
                                 <span class="text-base font-semibold text-primary">฿{{ formatTotal(totalAmount) }}</span>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-2 mt-4">
+                            <div class="grid grid-cols-1 gap-2 mt-4">
                                 <Button label="ดูตะกร้า" class="p-button-outlined text-sm p-2" @click="goToCart" />
-                                <Button label="ชำระเงิน" severity="success" class="text-sm p-2" @click="goToCart" />
+
                             </div>
                         </div>
                     </div>
