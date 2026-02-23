@@ -127,7 +127,10 @@ const currentUnit = computed(() => {
             balance_qty: product.value.balance_qty,
             minimum_qty: product.value.minimum_qty,
             maximum_qty: product.value.maximum_qty,
-            sum_sale: product.value.sum_sale
+            sum_sale: product.value.sum_sale,
+            stand_value: product.value.stand_value || '1',
+            divide_value: product.value.divide_value || '1',
+            ratio: product.value.ratio || '1'
         };
     } else {
         unit = product.value.otherUnits[selectedUnitIndex.value - 1];
@@ -384,7 +387,10 @@ function addToCart() {
         barcode: product.value.barcode || '',
         wh_code: localStorage.getItem('_warehouseCode') || '',
         shelf_code: '',
-        location_name: ''
+        location_name: '',
+        stand_value: unit.stand_value || '1',
+        divide_value: unit.divide_value || '1',
+        ratio: unit.ratio || '1'
     };
 
     const existingCartItem = cartStore.cartItems.find((item) => item.item_code === cartItem.item_code && item.unit_code === cartItem.unit_code);

@@ -587,8 +587,8 @@ export const useCartStore = defineStore('cart', () => {
             .toString()
             .padStart(2, '0');
 
-        // Return the final order number in the format MQTyyyymmdd-guid
-        return `MQT${dateStr}-${guid}`;
+        // Return the final order number in the format MPRyyyymmdd-guid
+        return `MPR${dateStr}-${guid}`;
     }
 
     // ตรวจสอบว่าสินค้าอยู่ในตะกร้าหรือไม่

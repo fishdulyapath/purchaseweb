@@ -88,16 +88,15 @@ const model = computed(() => {
         ]
     });
 
-    // 4. เมนูประวัติต่างๆ (เฉพาะเมื่อล็อกอินแล้ว)
+    // 4. เมนูอนุมัติ PR (เฉพาะเมื่อล็อกอินแล้ว)
     if (isLoggedIn.value) {
         menuItems.push({
-            label: 'ประวัติและการติดตาม',
-            icon: 'pi pi-fw pi-history',
+            label: 'เอกสาร',
+            icon: 'pi pi-fw pi-file',
             items: [
-                { label: 'ประวัติการสั่งซื้อ', icon: 'pi pi-fw pi-shopping-cart', to: '/orders-history' },
-                { label: 'ประวัติเอกสาร', icon: 'pi pi-fw pi-file', to: '/doc-history' },
-                { label: 'ประวัติการรับเงินล่วงหน้า', icon: 'pi pi-fw pi-wallet', to: '/advance-payment-history' },
-                { label: 'สถานะการจัดส่ง', icon: 'pi pi-fw pi-truck', to: '/order-shipping-status' }
+                { label: 'อนุมัติเสนอซื้อ(PR)', icon: 'pi pi-fw pi-check-square', to: '/pr-approve' },
+                { label: 'ประวัติเสนอซื้อ(PR)', icon: 'pi pi-fw pi-history', to: '/pr-history' },
+                { label: 'ใบสั่งซื้อ(PO)', icon: 'pi pi-fw pi-file-edit', to: '/po-list' }
             ]
         });
     }

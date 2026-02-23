@@ -30,44 +30,44 @@ const router = createRouter({
                     component: () => import('@/views/pages/CartView.vue')
                 },
 
-                // หน้าประวัติการสั่งซื้อ
+                // อนุมัติเสนอซื้อ (PR)
                 {
-                    path: 'orders-history',
-                    name: 'order-history',
-                    component: () => import('@/views/pages/OrderHistory.vue'),
+                    path: 'pr-approve',
+                    name: 'pr-approve',
+                    component: () => import('@/views/pages/PRApprove.vue'),
                     meta: {
                         requiresAuth: true,
-                        title: 'ประวัติการสั่งซื้อ'
+                        title: 'อนุมัติเสนอซื้อ'
                     }
                 },
-                // ประวัติเอกสาร
+                // ประวัติเสนอซื้อ
                 {
-                    path: 'doc-history',
-                    name: 'doc-history',
-                    component: () => import('@/views/pages/DocHistory.vue'),
+                    path: 'pr-history',
+                    name: 'pr-history',
+                    component: () => import('@/views/pages/PRHistory.vue'),
                     meta: {
                         requiresAuth: true,
-                        title: 'ประวัติเอกสาร'
+                        title: 'ประวัติเสนอซื้อ'
                     }
                 },
-                // สถานะการจัดส่ง
+                // ใบสั่งซื้อ PO
                 {
-                    path: 'order-shipping-status',
-                    name: 'order-shipping-status',
-                    component: () => import('@/views/pages/OrderShippingStatus.vue'),
+                    path: 'po-list',
+                    name: 'po-list',
+                    component: () => import('@/views/pages/POList.vue'),
                     meta: {
                         requiresAuth: true,
-                        title: 'สถานะการจัดส่ง'
+                        title: 'ใบสั่งซื้อ'
                     }
                 },
-                // ประวัติการรับเงินล่วงหน้า
+                // สร้าง PO
                 {
-                    path: 'advance-payment-history',
-                    name: 'advance-payment-history',
-                    component: () => import('@/views/pages/AdvancePayment.vue'),
+                    path: 'po-create',
+                    name: 'po-create',
+                    component: () => import('@/views/pages/POCreate.vue'),
                     meta: {
                         requiresAuth: true,
-                        title: 'ประวัติการรับเงินล่วงหน้า'
+                        title: 'สร้างใบสั่งซื้อ'
                     }
                 }
             ]
