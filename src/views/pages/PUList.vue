@@ -1,74 +1,76 @@
 <script setup>
 import ProductService from '@/services/ProductService';
 import axios from 'axios';
-import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 const apiBase = import.meta.env.VITE_APP_API;
-const toast = useToast();
 const router = useRouter();
-
-// Select PR dialog
-const showSelectPRDialog = ref(false);
-const prFromDate = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-const prToDate = ref(new Date());
-const prSearch = ref('');
-const prDocs = ref([]);
-const isLoadingPR = ref(false);
-const selectedPRs = ref([]);
-
-async function openSelectPR() {
-    selectedPRs.value = [];
-    showSelectPRDialog.value = true;
-    await loadPRDocs();
-}
-
-async function loadPRDocs() {
-    isLoadingPR.value = true;
-    try {
-        const from = formatDate(prFromDate.value);
-        const to = formatDate(prToDate.value);
-        const res = await axios.get(`${apiBase}/getPRDocApproved`, {
-            params: { fromdate: from, todate: to, search: prSearch.value }
-        });
-        prDocs.value = res.data?.data || [];
-    } catch (e) {
-        console.error('loadPRDocs error:', e);
-        prDocs.value = [];
-    } finally {
-        isLoadingPR.value = false;
-    }
-}
-
-function proceedCreatePO() {
-    if (selectedPRs.value.length === 0) return;
-    showSelectPRDialog.value = false;
-    router.push({ name: 'po-create', state: { selectedPRs: JSON.stringify(selectedPRs.value) } });
-}
 
 const today = new Date();
 const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-const formatDate = (d) => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
+const pad = (n) => String(n).padStart(2, '0');
+const formatDate = (d) => {
+    const dt = d instanceof Date ? d : new Date(d);
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+};
 
 const fromDate = ref(firstOfMonth);
 const toDate = ref(today);
 const searchText = ref('');
-
 const docs = ref([]);
 const isLoading = ref(false);
 
-// Detail dialog
+// Select PO dialog
+const showSelectPODialog = ref(false);
+const poFromDate = ref(new Date(today.getFullYear(), today.getMonth(), 1));
+const poToDate = ref(today);
+const poSearch = ref('');
+const poDocs = ref([]);
+const isLoadingPO = ref(false);
+const selectedPOs = ref([]);
+
+async function openSelectPO() {
+    selectedPOs.value = [];
+    showSelectPODialog.value = true;
+    await loadPODocs();
+}
+
+async function loadPODocs() {
+    isLoadingPO.value = true;
+    try {
+        const res = await axios.get(`${apiBase}/getPODocWait`, {
+            params: { fromdate: formatDate(poFromDate.value), todate: formatDate(poToDate.value), search: poSearch.value }
+        });
+        poDocs.value = res.data?.data || [];
+    } catch (e) {
+        console.error('loadPODocs error:', e);
+        poDocs.value = [];
+    } finally {
+        isLoadingPO.value = false;
+    }
+}
+
+function proceedCreatePU() {
+    if (selectedPOs.value.length === 0) return;
+    showSelectPODialog.value = false;
+    router.push({ name: 'pu-create', state: { selectedPOs: JSON.stringify(selectedPOs.value) } });
+}
+
+// Detail dialog (read-only)
 const showDetailDialog = ref(false);
 const selectedDoc = ref(null);
 const editItems = ref([]);
 const isLoadingDetail = ref(false);
-const isSaving = ref(false);
+
+const totalAmount = computed(() =>
+    editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0)
+);
 
 async function loadDocs() {
     isLoading.value = true;
     try {
-        const res = await axios.get(`${apiBase}/getPODocList`, {
+        const res = await axios.get(`${apiBase}/getPUDocList`, {
             params: { fromdate: formatDate(fromDate.value), todate: formatDate(toDate.value), search: searchText.value }
         });
         docs.value = res.data?.data || [];
@@ -86,15 +88,12 @@ async function openDetail(doc) {
     showDetailDialog.value = true;
     isLoadingDetail.value = true;
     try {
-        const res = await axios.get(`${apiBase}/getDocPoDetail`, { params: { doc_no: doc.doc_no } });
+        const res = await axios.get(`${apiBase}/getDocDetail`, { params: { doc_no: doc.doc_no } });
         const data = res.data?.data || {};
         editItems.value = (data.items || []).map((item) => ({
             ...item,
-            price: parseFloat(item.price) || 0,
-            po_qty: parseFloat(item.po_qty) || 0,
-            pu_qty: parseFloat(item.pu_qty) || 0,
-            balance_qty: parseFloat(item.balance_qty) || 0,
-            updateable: item.updateable === '1' || item.updateable === 1
+            qty: parseFloat(item.qty) || 0,
+            price: parseFloat(item.price) || 0
         }));
         selectedDoc.value = { ...doc, ...data, items: undefined };
     } catch (e) {
@@ -103,46 +102,6 @@ async function openDetail(doc) {
         isLoadingDetail.value = false;
     }
 }
-
-async function saveDetail() {
-    if (!selectedDoc.value) return;
-    isSaving.value = true;
-    try {
-        const empCode = localStorage.getItem('_empCode') || '';
-        const payload = editItems.value
-            .filter((item) => !item.updateable)
-            .map((item) => ({
-                doc_no: selectedDoc.value.doc_no,
-                doc_date: selectedDoc.value.doc_date,
-                doc_time: selectedDoc.value.doc_time,
-                cust_code: selectedDoc.value.cust_code,
-                emp_code: empCode,
-                item_code: item.item_code,
-                item_name: item.item_name,
-                unit_code: item.unit_code,
-                barcode: item.barcode || '',
-                qty: String(item.po_qty),
-                price: String(item.price),
-                stand_value: item.stand_value || '1',
-                divide_value: item.divide_value || '1',
-                ratio: item.ratio || '1'
-            }));
-        await axios.post(`${apiBase}/updatePoDetail`, payload, {
-            params: { docno: selectedDoc.value.doc_no }
-        });
-        toast.add({ severity: 'success', summary: 'บันทึกสำเร็จ', detail: `อัปเดต ${selectedDoc.value.doc_no} แล้ว`, life: 3000 });
-        showDetailDialog.value = false;
-    } catch (e) {
-        console.error('saveDetail error:', e);
-        toast.add({ severity: 'error', summary: 'เกิดข้อผิดพลาด', detail: 'ไม่สามารถบันทึกได้', life: 3000 });
-    } finally {
-        isSaving.value = false;
-    }
-}
-
-const totalAmount = computed(() =>
-    editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.po_qty) || 0), 0)
-);
 
 function formatNumber(value) {
     if (value === undefined || value === null) return '0.00';
@@ -165,8 +124,8 @@ onMounted(() => loadDocs());
     <Toast />
     <div class="p-4">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold">ใบสั่งซื้อ (PO)</h2>
-            <Button icon="pi pi-plus" label="สร้าง PO" severity="success" @click="openSelectPR" />
+            <h2 class="text-xl font-bold">ใบรับสินค้า (PU)</h2>
+            <Button icon="pi pi-plus" label="สร้าง PU" severity="success" @click="openSelectPO" />
         </div>
 
         <!-- Filter bar -->
@@ -207,7 +166,7 @@ onMounted(() => loadDocs());
                         <div class="text-sm text-gray-500 mb-1">{{ doc.doc_date }} {{ doc.doc_time }}</div>
                         <div class="text-sm mb-1"><span class="text-gray-500">เจ้าหนี้:</span> {{ doc.cust_code }}~{{ doc.cust_name }}</div>
                         <div class="text-sm mb-1"><span class="text-gray-500">ผู้สร้าง:</span> {{ doc.creator_code }}</div>
-                        <div v-if="doc.pra_doc_list" class="text-sm mb-2"><span class="text-gray-500">เลขที่อนุมัติ:</span> {{ doc.pra_doc_list }}</div>
+                        <div v-if="doc.po_doc_list" class="text-sm mb-2"><span class="text-gray-500">เลขที่ PO:</span> {{ doc.po_doc_list }}</div>
                         <Button icon="pi pi-pencil" label="รายละเอียด/แก้ไข" severity="info" outlined size="small" class="w-full" @click="openDetail(doc)" />
                     </div>
                 </div>
@@ -220,7 +179,7 @@ onMounted(() => loadDocs());
                             <th class="text-left px-4 py-3 font-medium">วันที่</th>
                             <th class="text-left px-4 py-3 font-medium">เจ้าหนี้</th>
                             <th class="text-left px-4 py-3 font-medium">ผู้สร้าง</th>
-                            <th class="text-left px-4 py-3 font-medium">เลขที่อนุมัติ PR</th>
+                            <th class="text-left px-4 py-3 font-medium">เลขที่ PO</th>
                             <th class="text-center px-4 py-3 font-medium">จัดการ</th>
                         </tr>
                     </thead>
@@ -230,7 +189,7 @@ onMounted(() => loadDocs());
                             <td class="px-4 py-3 text-gray-600 dark:text-gray-400">{{ doc.doc_date }} {{ doc.doc_time }}</td>
                             <td class="px-4 py-3">{{ doc.cust_code }}~{{ doc.cust_name }}</td>
                             <td class="px-4 py-3">{{ doc.creator_code }}</td>
-                            <td class="px-4 py-3 text-gray-500 text-xs">{{ doc.pra_doc_list || '-' }}</td>
+                            <td class="px-4 py-3 text-gray-500 text-xs">{{ doc.po_doc_list || '-' }}</td>
                             <td class="px-4 py-3 text-center">
                                 <Button icon="pi pi-pencil" v-tooltip.top="'รายละเอียด/แก้ไข'" severity="info" outlined rounded size="small" @click="openDetail(doc)" />
                             </td>
@@ -240,15 +199,18 @@ onMounted(() => loadDocs());
             </div>
         </div>
 
-        <!-- Detail / Edit Dialog -->
-        <Dialog v-model:visible="showDetailDialog" modal header="รายละเอียดใบสั่งซื้อ" :style="{ width: '98%', maxWidth: '1000px' }" :draggable="false" :closable="!isSaving">
+        <!-- Detail Dialog (read-only) -->
+        <Dialog v-model:visible="showDetailDialog" modal header="รายละเอียดใบรับสินค้า" :style="{ width: '98%', maxWidth: '900px' }" :draggable="false">
             <div v-if="selectedDoc" class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm mb-4">
                 <div><span class="text-gray-500">เลขที่:</span> <span class="font-medium">{{ selectedDoc.doc_no }}</span></div>
                 <div><span class="text-gray-500">วันที่:</span> {{ selectedDoc.doc_date }} {{ selectedDoc.doc_time }}</div>
                 <div><span class="text-gray-500">เจ้าหนี้:</span> {{ selectedDoc.cust_code }}~{{ selectedDoc.cust_name }}</div>
-                <div><span class="text-gray-500">ผู้สร้าง:</span> {{ selectedDoc.creator_code }}</div>
-                <div v-if="selectedDoc.pra_doc_list" class="col-span-2">
-                    <span class="text-gray-500">เลขที่อนุมัติ PR:</span> {{ selectedDoc.pra_doc_list }}
+                <div><span class="text-gray-500">ผู้สร้าง:</span> {{ selectedDoc.emp_code }}</div>
+                <div v-if="selectedDoc.po_doc_list" class="col-span-2">
+                    <span class="text-gray-500">เลขที่ PO:</span> {{ selectedDoc.po_doc_list }}
+                </div>
+                <div v-if="selectedDoc.remark" class="col-span-2">
+                    <span class="text-gray-500">หมายเหตุ:</span> {{ selectedDoc.remark }}
                 </div>
             </div>
 
@@ -266,46 +228,31 @@ onMounted(() => loadDocs());
                             <th class="text-left px-3 py-2 font-medium">รหัส</th>
                             <th class="text-left px-3 py-2 font-medium">ชื่อสินค้า</th>
                             <th class="text-center px-3 py-2 font-medium">หน่วย</th>
-                            <th class="text-right px-3 py-2 font-medium w-24">สั่ง</th>
-                            <th class="text-right px-3 py-2 font-medium w-24">รับแล้ว</th>
-                            <th class="text-right px-3 py-2 font-medium w-24">ค้างรับ</th>
-                            <th class="text-right px-3 py-2 font-medium w-28">ราคา/หน่วย</th>
-                            <th class="text-right px-3 py-2 font-medium w-28">รวม</th>
+                            <th class="text-right px-3 py-2 font-medium w-28">จำนวน</th>
+                            <th class="text-right px-3 py-2 font-medium w-32">ราคา/หน่วย</th>
+                            <th class="text-right px-3 py-2 font-medium w-32">รวม</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="(item, idx) in editItems" :key="idx"
-                            class="border-t border-gray-100 dark:border-gray-800"
-                            :class="item.updateable ? 'bg-gray-50 dark:bg-gray-800/30 opacity-60' : ''">
+                        <tr v-for="(item, idx) in editItems" :key="idx" class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                             <td class="px-3 py-2">
                                 <div class="w-10 h-10 overflow-hidden rounded border border-gray-200 dark:border-gray-700">
                                     <img :src="getProductImage(item.item_code)" :alt="item.item_code" class="w-full h-full object-contain" @error="handleImageError" />
                                 </div>
                             </td>
                             <td class="px-3 py-2 font-medium">{{ item.item_code }}</td>
-                            <td class="px-3 py-2">
-                                <div>{{ item.item_name }}</div>
-                                <div v-if="item.updateable" class="text-xs text-orange-500 font-medium">รับครบแล้ว</div>
-                            </td>
+                            <td class="px-3 py-2">{{ item.item_name }}</td>
                             <td class="px-3 py-2 text-center">{{ item.unit_code }}</td>
-                            <td class="px-3 py-2">
-                                <InputNumber v-model="item.po_qty" :min="0" :maxFractionDigits="2" class="w-full" inputClass="text-right" :disabled="item.updateable" />
-                            </td>
-                            <td class="px-3 py-2 text-right text-blue-600 dark:text-blue-400">{{ formatNumber(item.pu_qty) }}</td>
-                            <td class="px-3 py-2 text-right font-medium" :class="item.balance_qty > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'">
-                                {{ formatNumber(item.balance_qty) }}
-                            </td>
-                            <td class="px-3 py-2">
-                                <InputNumber v-model="item.price" :min="0" :maxFractionDigits="2" class="w-full" inputClass="text-right" :disabled="item.updateable" />
-                            </td>
+                            <td class="px-3 py-2 text-right">{{ formatNumber(item.qty) }}</td>
+                            <td class="px-3 py-2 text-right">{{ formatNumber(item.price) }}</td>
                             <td class="px-3 py-2 text-right font-medium">
-                                {{ formatNumber((parseFloat(item.price) || 0) * (parseFloat(item.po_qty) || 0)) }}
+                                {{ formatNumber((parseFloat(item.price) || 0) * (parseFloat(item.qty) || 0)) }}
                             </td>
                         </tr>
                     </tbody>
                     <tfoot>
                         <tr class="border-t-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 font-bold">
-                            <td colspan="8" class="px-3 py-2 text-right">ยอดรวม</td>
+                            <td colspan="6" class="px-3 py-2 text-right">ยอดรวม</td>
                             <td class="px-3 py-2 text-right text-primary">{{ formatNumber(totalAmount) }}</td>
                         </tr>
                     </tfoot>
@@ -313,33 +260,32 @@ onMounted(() => loadDocs());
             </div>
 
             <template #footer>
-                <Button label="ยกเลิก" icon="pi pi-times" severity="secondary" outlined @click="showDetailDialog = false" :disabled="isSaving" />
-                <Button v-if="selectedDoc?.doc_success !== '1' && selectedDoc?.doc_success !== 1" label="บันทึก" icon="pi pi-save" severity="success" @click="saveDetail" :loading="isSaving" :disabled="editItems.length === 0" />
+                <Button label="ปิด" icon="pi pi-times" severity="secondary" outlined @click="showDetailDialog = false" />
             </template>
         </Dialog>
-        <!-- Select PR Dialog -->
-        <Dialog v-model:visible="showSelectPRDialog" modal header="เลือกเอกสาร PR ที่อนุมัติแล้ว" :style="{ width: '95%', maxWidth: '700px' }" :draggable="false">
-            <!-- Filter -->
+
+        <!-- Select PO Dialog -->
+        <Dialog v-model:visible="showSelectPODialog" modal header="เลือกใบสั่งซื้อ (PO) ที่รอรับสินค้า" :style="{ width: '95%', maxWidth: '700px' }" :draggable="false">
             <div class="flex flex-wrap gap-3 items-end mb-4">
                 <div class="flex flex-col gap-1">
                     <label class="text-sm font-medium">จากวันที่</label>
-                    <DatePicker v-model="prFromDate" dateFormat="yy-mm-dd" showIcon class="w-36" />
+                    <DatePicker v-model="poFromDate" dateFormat="yy-mm-dd" showIcon class="w-36" />
                 </div>
                 <div class="flex flex-col gap-1">
                     <label class="text-sm font-medium">ถึงวันที่</label>
-                    <DatePicker v-model="prToDate" dateFormat="yy-mm-dd" showIcon class="w-36" />
+                    <DatePicker v-model="poToDate" dateFormat="yy-mm-dd" showIcon class="w-36" />
                 </div>
                 <div class="flex-1" style="min-width: 140px">
                     <label class="text-sm font-medium block mb-1">ค้นหา</label>
-                    <InputText v-model="prSearch" placeholder="เลขที่เอกสาร" class="w-full" @keyup.enter="loadPRDocs" />
+                    <InputText v-model="poSearch" placeholder="เลขที่เอกสาร" class="w-full" @keyup.enter="loadPODocs" />
                 </div>
-                <Button icon="pi pi-search" label="ค้นหา" size="small" @click="loadPRDocs" :loading="isLoadingPR" />
+                <Button icon="pi pi-search" label="ค้นหา" size="small" @click="loadPODocs" :loading="isLoadingPO" />
             </div>
 
-            <div v-if="isLoadingPR" class="flex justify-center py-6">
+            <div v-if="isLoadingPO" class="flex justify-center py-6">
                 <ProgressSpinner style="width: 36px; height: 36px" strokeWidth="4" />
             </div>
-            <div v-else-if="prDocs.length === 0" class="text-center text-gray-400 py-6">ไม่พบเอกสาร PR ที่อนุมัติแล้ว</div>
+            <div v-else-if="poDocs.length === 0" class="text-center text-gray-400 py-6">ไม่พบใบสั่งซื้อที่รอรับสินค้า</div>
             <div v-else class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-gray-50 dark:bg-gray-800">
@@ -348,31 +294,30 @@ onMounted(() => loadDocs());
                             <th class="text-left px-3 py-2 font-medium">เลขที่เอกสาร</th>
                             <th class="text-left px-3 py-2 font-medium">วันที่</th>
                             <th class="text-left px-3 py-2 font-medium">เจ้าหนี้</th>
-                            <th class="text-left px-3 py-2 font-medium">ผู้อนุมัติ</th>
+                            <th class="text-left px-3 py-2 font-medium">ผู้สร้าง</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="pr in prDocs" :key="pr.doc_no"
-                            class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                        <tr v-for="po in poDocs" :key="po.doc_no" class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                             <td class="px-3 py-2 text-center">
-                                <Checkbox :modelValue="selectedPRs.includes(pr)" :binary="true" @change="selectedPRs.includes(pr) ? selectedPRs.splice(selectedPRs.indexOf(pr), 1) : selectedPRs.push(pr)" />
+                                <Checkbox :modelValue="selectedPOs.includes(po)" :binary="true" @change="selectedPOs.includes(po) ? selectedPOs.splice(selectedPOs.indexOf(po), 1) : selectedPOs.push(po)" />
                             </td>
-                            <td class="px-3 py-2 font-medium text-primary">{{ pr.doc_no }}</td>
-                            <td class="px-3 py-2 text-gray-500">{{ pr.doc_date }} {{ pr.doc_time }}</td>
-                            <td class="px-3 py-2">{{ pr.cust_code }}~{{ pr.cust_name }}</td>
-                            <td class="px-3 py-2">{{ pr.approve_code }}</td>
+                            <td class="px-3 py-2 font-medium text-primary">{{ po.doc_no }}</td>
+                            <td class="px-3 py-2 text-gray-500">{{ po.doc_date }} {{ po.doc_time }}</td>
+                            <td class="px-3 py-2">{{ po.cust_code }}~{{ po.cust_name }}</td>
+                            <td class="px-3 py-2">{{ po.creator_code }}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
-            <div v-if="selectedPRs.length > 0" class="mt-3 p-2 bg-primary-50 dark:bg-primary-900/20 rounded text-sm text-primary">
-                เลือกแล้ว {{ selectedPRs.length }} เอกสาร: {{ selectedPRs.map(p => p.doc_no).join(', ') }}
+            <div v-if="selectedPOs.length > 0" class="mt-3 p-2 bg-primary-50 dark:bg-primary-900/20 rounded text-sm text-primary">
+                เลือกแล้ว {{ selectedPOs.length }} เอกสาร: {{ selectedPOs.map(p => p.doc_no).join(', ') }}
             </div>
 
             <template #footer>
-                <Button label="ยกเลิก" icon="pi pi-times" severity="secondary" outlined @click="showSelectPRDialog = false" />
-                <Button label="ดำเนินการต่อ" icon="pi pi-arrow-right" severity="success" @click="proceedCreatePO" :disabled="selectedPRs.length === 0" />
+                <Button label="ยกเลิก" icon="pi pi-times" severity="secondary" outlined @click="showSelectPODialog = false" />
+                <Button label="ดำเนินการต่อ" icon="pi pi-arrow-right" severity="success" @click="proceedCreatePU" :disabled="selectedPOs.length === 0" />
             </template>
         </Dialog>
     </div>

@@ -69,6 +69,26 @@ const router = createRouter({
                         requiresAuth: true,
                         title: 'สร้างใบสั่งซื้อ'
                     }
+                },
+                // ใบรับสินค้า PU
+                {
+                    path: 'pu-list',
+                    name: 'pu-list',
+                    component: () => import('@/views/pages/PUList.vue'),
+                    meta: {
+                        requiresAuth: true,
+                        title: 'ใบรับสินค้า'
+                    }
+                },
+                // สร้างใบรับสินค้า PU
+                {
+                    path: 'pu-create',
+                    name: 'pu-create',
+                    component: () => import('@/views/pages/PUCreate.vue'),
+                    meta: {
+                        requiresAuth: true,
+                        title: 'สร้างใบรับสินค้า'
+                    }
                 }
             ]
         },

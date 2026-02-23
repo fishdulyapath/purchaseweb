@@ -96,7 +96,8 @@ const model = computed(() => {
             items: [
                 { label: 'อนุมัติเสนอซื้อ(PR)', icon: 'pi pi-fw pi-check-square', to: '/pr-approve' },
                 { label: 'ประวัติเสนอซื้อ(PR)', icon: 'pi pi-fw pi-history', to: '/pr-history' },
-                { label: 'ใบสั่งซื้อ(PO)', icon: 'pi pi-fw pi-file-edit', to: '/po-list' }
+                { label: 'ใบสั่งซื้อ(PO)', icon: 'pi pi-fw pi-file-edit', to: '/po-list' },
+                { label: 'ใบรับสินค้า(PU)', icon: 'pi pi-fw pi-download', to: '/pu-list' }
             ]
         });
     }

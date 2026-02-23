@@ -157,7 +157,7 @@ onMounted(() => {
                 </div>
                 <div class="flex flex-col gap-1 flex-1" style="min-width: 160px">
                     <label class="text-sm font-medium">ค้นหา</label>
-                    <InputText v-model="searchText" placeholder="เลขที่เอกสาร / รหัสร้าน" class="w-full" @keyup.enter="loadDocs" />
+                    <InputText v-model="searchText" placeholder="ค้นหา" class="w-full" @keyup.enter="loadDocs" />
                 </div>
                 <Button icon="pi pi-search" label="ค้นหา" @click="loadDocs" :loading="isLoading" />
             </div>
@@ -184,7 +184,7 @@ onMounted(() => {
                                 <div class="text-sm text-gray-500">{{ doc.doc_date }} {{ doc.doc_time }}</div>
                             </div>
                         </div>
-                        <div class="text-sm mb-1"><span class="text-gray-500">รหัสร้าน:</span> {{ doc.cust_code }}</div>
+                        <div class="text-sm mb-1"><span class="text-gray-500">เจ้าหนี้:</span> {{ doc.cust_code }}~{{ doc.cust_name }}</div>
                         <div v-if="doc.remark" class="text-sm mb-3"><span class="text-gray-500">หมายเหตุ:</span> {{ doc.remark }}</div>
                         <div class="flex gap-2 mt-2">
                             <Button icon="pi pi-list" label="รายละเอียด" severity="info" outlined size="small" @click="openDetail(doc)" class="flex-1" />
@@ -200,7 +200,7 @@ onMounted(() => {
                         <tr>
                             <th class="text-left px-4 py-3 font-medium">เลขที่เอกสาร</th>
                             <th class="text-left px-4 py-3 font-medium">วันที่</th>
-                            <th class="text-left px-4 py-3 font-medium">รหัสร้าน</th>
+                            <th class="text-left px-4 py-3 font-medium">เจ้าหนี้</th>
                             <th class="text-left px-4 py-3 font-medium">หมายเหตุ</th>
                             <th class="text-center px-4 py-3 font-medium">การจัดการ</th>
                         </tr>
@@ -209,7 +209,7 @@ onMounted(() => {
                         <tr v-for="doc in docs" :key="doc.doc_no" class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                             <td class="px-4 py-3 font-medium text-primary">{{ doc.doc_no }}</td>
                             <td class="px-4 py-3 text-gray-600 dark:text-gray-400">{{ doc.doc_date }} {{ doc.doc_time }}</td>
-                            <td class="px-4 py-3">{{ doc.cust_code }}</td>
+                            <td class="px-4 py-3">{{ doc.cust_code }}~{{ doc.cust_name }}</td>
                             <td class="px-4 py-3 text-gray-500">{{ doc.remark || '-' }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex gap-2 justify-center">
@@ -232,7 +232,7 @@ onMounted(() => {
                         <span class="text-gray-500">เลขที่:</span> <span class="font-medium">{{ selectedDoc.doc_no }}</span>
                     </div>
                     <div><span class="text-gray-500">วันที่:</span> {{ selectedDoc.doc_date }} {{ selectedDoc.doc_time }}</div>
-                    <div><span class="text-gray-500">รหัสร้าน:</span> {{ selectedDoc.cust_code }}</div>
+                    <div><span class="text-gray-500">เจ้าหนี้:</span> {{ selectedDoc.cust_code }}~{{ selectedDoc.cust_name }}</div>
                     <div v-if="selectedDoc.remark"><span class="text-gray-500">หมายเหตุ:</span> {{ selectedDoc.remark }}</div>
                 </div>
             </div>

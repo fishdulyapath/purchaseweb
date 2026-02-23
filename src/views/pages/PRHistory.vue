@@ -161,7 +161,7 @@ onMounted(() => loadDocs());
                             </div>
                             <Tag :value="statusLabel(doc.approve_status).text" :severity="statusLabel(doc.approve_status).severity" />
                         </div>
-                        <div class="text-sm mb-1"><span class="text-gray-500">เจ้าหนี้:</span> {{ doc.cust_code }}</div>
+                        <div class="text-sm mb-1"><span class="text-gray-500">เจ้าหนี้:</span> {{ doc.cust_code }}~{{ doc.cust_name }}</div>
                         <div class="text-sm mb-1"><span class="text-gray-500">ผู้เสนอ:</span> {{ doc.user_request }}</div>
                         <div class="text-sm mb-1"><span class="text-gray-500">ผู้อนุมัติ:</span> {{ doc.approve_code || '-' }}</div>
                         <div v-if="doc.doc_ref" class="text-sm mb-1"><span class="text-gray-500">เลขที่อนุมัติ:</span> {{ doc.doc_ref }}</div>
@@ -194,7 +194,7 @@ onMounted(() => loadDocs());
                         <tr v-for="doc in docs" :key="doc.doc_no" class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                             <td class="px-4 py-3 font-medium text-primary">{{ doc.doc_no }}</td>
                             <td class="px-4 py-3 text-gray-600 dark:text-gray-400">{{ doc.doc_date }} {{ doc.doc_time }}</td>
-                            <td class="px-4 py-3">{{ doc.cust_code }}</td>
+                            <td class="px-4 py-3">{{ doc.cust_code }}~{{ doc.cust_name }}</td>
                             <td class="px-4 py-3">{{ doc.user_request }}</td>
                             <td class="px-4 py-3">{{ doc.approve_code || '-' }}</td>
                             <td class="px-4 py-3 text-gray-500">{{ doc.doc_ref || '-' }}</td>
@@ -221,7 +221,7 @@ onMounted(() => loadDocs());
                 <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm mb-3">
                     <div><span class="text-gray-500">เลขที่:</span> <span class="font-medium">{{ selectedDoc.doc_no }}</span></div>
                     <div><span class="text-gray-500">วันที่:</span> {{ selectedDoc.doc_date }} {{ selectedDoc.doc_time }}</div>
-                    <div><span class="text-gray-500">เจ้าหนี้:</span> {{ selectedDoc.cust_code }}</div>
+                    <div><span class="text-gray-500">เจ้าหนี้:</span> {{ selectedDoc.cust_code }}~{{ selectedDoc.cust_name }}</div>
                     <div><span class="text-gray-500">ผู้เสนอ:</span> {{ selectedDoc.user_request }}</div>
                     <div><span class="text-gray-500">ผู้อนุมัติ:</span> {{ selectedDoc.approve_code || '-' }}</div>
                     <div><span class="text-gray-500">สถานะ:</span> <Tag :value="statusLabel(selectedDoc.approve_status).text" :severity="statusLabel(selectedDoc.approve_status).severity" class="ml-1" /></div>
