@@ -13,6 +13,8 @@ const cartItemCount = computed(() => cartStore.totalItems);
 const isLoggedIn = ref(!!localStorage.getItem('_token'));
 const userName = ref('');
 const isEmployee = ref(false); // Add employee state check
+const empPermissions = ref({});
+const isSuperAdmin = ref(false);
 
 // ดึงข้อมูลผู้ใช้จาก localStorage
 onMounted(() => {
@@ -30,8 +32,27 @@ onMounted(() => {
         // Check if user is an employee
         const userType = localStorage.getItem('_userType');
         isEmployee.value = userType === 'employee';
+
+        // Load permissions
+        const empCode = (localStorage.getItem('_empCode') || '').toUpperCase();
+        isSuperAdmin.value = empCode === 'SUPERADMIN';
+        const permsStr = localStorage.getItem('_empPermissions');
+        if (permsStr) {
+            try {
+                empPermissions.value = JSON.parse(permsStr);
+            } catch (e) {
+                empPermissions.value = {};
+            }
+        }
     }
 });
+
+// ตรวจสิทธิ์หน้าจอ - superadmin เข้าได้ทุกหน้า, default = ไม่อนุญาต
+function hasPermission(key) {
+    if (isSuperAdmin.value) return true;
+    const perms = empPermissions.value;
+    return perms[key] === 1;
+}
 
 // ฟังก์ชันสำหรับออกจากระบบ
 const handleLogout = () => {
@@ -88,17 +109,27 @@ const model = computed(() => {
         ]
     });
 
-    // 4. เมนูอนุมัติ PR (เฉพาะเมื่อล็อกอินแล้ว)
+    // 4. เมนูเอกสาร (เฉพาะเมื่อล็อกอินแล้ว)
     if (isLoggedIn.value) {
+        const docItems = [
+            { label: 'ประวัติเสนอซื้อ(PR)', icon: 'pi pi-fw pi-history', to: '/pr-history' }
+        ];
+        if (hasPermission('pr_approve')) {
+            docItems.push({ label: 'อนุมัติเสนอซื้อ(PR)', icon: 'pi pi-fw pi-check-square', to: '/pr-approve' });
+        }
+        if (hasPermission('po')) {
+            docItems.push({ label: 'ใบสั่งซื้อ(PO)', icon: 'pi pi-fw pi-file-edit', to: '/po-list' });
+        }
+        if (hasPermission('pu')) {
+            docItems.push({ label: 'ใบรับสินค้า(PU)', icon: 'pi pi-fw pi-download', to: '/pu-list' });
+        }
+        if (isSuperAdmin.value) {
+            docItems.push({ label: 'กำหนดสิทธิ์', icon: 'pi pi-fw pi-shield', to: '/permission-manage' });
+        }
         menuItems.push({
             label: 'เอกสาร',
             icon: 'pi pi-fw pi-file',
-            items: [
-                { label: 'อนุมัติเสนอซื้อ(PR)', icon: 'pi pi-fw pi-check-square', to: '/pr-approve' },
-                { label: 'ประวัติเสนอซื้อ(PR)', icon: 'pi pi-fw pi-history', to: '/pr-history' },
-                { label: 'ใบสั่งซื้อ(PO)', icon: 'pi pi-fw pi-file-edit', to: '/po-list' },
-                { label: 'ใบรับสินค้า(PU)', icon: 'pi pi-fw pi-download', to: '/pu-list' }
-            ]
+            items: docItems
         });
     }
 

@@ -26,3 +26,13 @@ CREATE TABLE public.ps_cart_order_temp
   CONSTRAINT ps_cart_order_temp_pk PRIMARY KEY (roworder)
 )
 
+CREATE TABLE emp_permission (
+    id          serial,
+    emp_code    character varying(255) NOT NULL,
+    screen_code character varying(255) NOT NULL, 
+    is_allow    smallint  NOT NULL DEFAULT 1,
+    created_by  character varying(255),
+    created_at  timestamp without time zone DEFAULT now(),
+    updated_at  timestamp without time zone DEFAULT now(),
+    CONSTRAINT uq_emp_screen_pk PRIMARY KEY (emp_code, screen_code)
+);

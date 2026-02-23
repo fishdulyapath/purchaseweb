@@ -68,9 +68,13 @@ async function onWarehouseChange() {
     }
 }
 
-const totalAmount = computed(() =>
+const totalDiscount = ref(0);
+
+const totalBeforeDiscount = computed(() =>
     editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0)
 );
+
+const totalAmount = computed(() => Math.max(0, totalBeforeDiscount.value - (parseFloat(totalDiscount.value) || 0)));
 
 async function loadPOItems() {
     if (selectedPOs.value.length === 0) return;
@@ -79,12 +83,12 @@ async function loadPOItems() {
         // ดึงทีละ PO แล้วรวม items เข้าด้วยกัน
         const results = await Promise.all(
             selectedPOs.value.map((po) =>
-                axios.get(`${apiBase}/getDocPoDetail`, { params: { doc_no: po.doc_no } })
+                axios.get(`${apiBase}/getDocPoDetail`, { params: { doc_no: po.doc_no } }).then((res) => ({ res, po }))
             )
         );
         const allItems = [];
         const allPo = [];
-        for (const res of results) {
+        for (const { res, po } of results) {
             const data = res.data?.data || {};
             const items = data.items || [];
             if (!custCode.value && data.cust_code) {
@@ -94,6 +98,7 @@ async function loadPOItems() {
             for (const item of items) {
                 const mapped = {
                     ...item,
+                    doc_no: po.doc_no, // ผูก doc_no ของ PO เพื่อแยก doc_success ตาม PO
                     qty: parseFloat(item.balance_qty) || 0,
                     po_qty: parseFloat(item.po_qty) || 0,
                     balance_qty: parseFloat(item.balance_qty) || 0,
@@ -102,7 +107,6 @@ async function loadPOItems() {
                     shelf_code: item.shelf_code || ''
                 };
                 allPo.push(mapped);
-                // แสดงเฉพาะรายการที่ยังค้างรับ (balance_qty > 0)
                 if (mapped.balance_qty > 0) allItems.push(mapped);
             }
         }
@@ -129,6 +133,7 @@ async function createPU() {
 
         const shelfCode = selectedShelf.value?.code || '';
         const mappedItems = editItems.value.map((item) => ({
+            doc_no: item.doc_no || '',
             item_code: item.item_code,
             item_name: item.item_name,
             unit_code: item.unit_code,
@@ -146,19 +151,25 @@ async function createPU() {
         const totalValue = mappedItems.reduce((s, i) => s + (parseFloat(i.sum_amount) || 0), 0);
         const totalExceptVat = mappedItems.filter((i) => i.tax_type === '1').reduce((s, i) => s + (parseFloat(i.sum_amount) || 0), 0);
         const totalAfterVat = mappedItems.filter((i) => i.tax_type === '0').reduce((s, i) => s + (parseFloat(i.sum_amount) || 0), 0);
+        const discountValue = parseFloat(totalDiscount.value) || 0;
+        const netAmount = Math.max(0, totalValue - discountValue);
 
-        // doc_success = 1 ถ้าทุก item ใน PO รับครบ:
-        // - updateable=true = รับครบแล้ว (จาก PU ก่อนหน้า)
-        // - updateable=false = เช็ค qty ที่ user กรอกครั้งนี้ >= po_qty
-        const allReceived = allPoItems.value.every((poItem) => {
-            if (poItem.updateable) return true;
-            const edit = editItems.value.find(
-                (e) => e.item_code === poItem.item_code && e.unit_code === poItem.unit_code
-            );
-            const receivedQty = parseFloat(edit?.qty) || 0;
-            return receivedQty >= (parseFloat(poItem.po_qty) || 0);
+        // คำนวณ doc_success แยกตาม PO แต่ละใบ
+        // รายการใน allPoItems มี doc_no ของ PO ต้นทาง
+        // balance_qty = 0 หมายถึงรายการนั้นรับครบแล้ว (จาก PU ก่อนหน้า)
+        // balance_qty > 0 → เช็ค qty ที่ user กรอกครั้งนี้ >= po_qty
+        const docList = selectedPOs.value.map((po) => {
+            const poItems = allPoItems.value.filter((i) => i.doc_no === po.doc_no);
+            const allReceived = poItems.every((poItem) => {
+                if (poItem.balance_qty <= 0) return true; // รับครบแล้วจาก PU ก่อนหน้า
+                const edit = editItems.value.find(
+                    (e) => e.item_code === poItem.item_code && e.unit_code === poItem.unit_code && e.doc_no === po.doc_no
+                );
+                const receivedQty = parseFloat(edit?.qty) || 0;
+                return receivedQty >= (parseFloat(poItem.po_qty) || 0);
+            });
+            return { doc_no: po.doc_no, doc_date: po.doc_date, doc_success: allReceived ? '1' : '0' };
         });
-        const docSuccess = allReceived ? '1' : '0';
 
         const payload = {
             doc_no: docNo.value,
@@ -168,12 +179,12 @@ async function createPU() {
             branch_code: whCode,
             emp_code: empCode,
             remark: remark.value,
-            doc_success: docSuccess,
             total_value: String(totalValue),
             total_except_vat: String(totalExceptVat),
             total_after_vat: String(totalAfterVat),
-            total_amount: String(totalValue),
-            doc_list: selectedPOs.value.map((po) => ({ doc_no: po.doc_no, doc_date: po.doc_date })),
+            total_discount: String(discountValue),
+            total_amount: String(netAmount),
+            doc_list: docList,
             items: mappedItems
         };
 
@@ -514,6 +525,7 @@ onMounted(async () => {
                 <table class="w-full text-sm">
                     <thead class="bg-gray-50 dark:bg-gray-800">
                         <tr>
+                            <th class="text-left px-3 py-2 font-medium">เลขที่ PO</th>
                             <th class="text-left px-3 py-2 font-medium w-12">รูป</th>
                             <th class="text-left px-3 py-2 font-medium">รหัส</th>
                             <th class="text-left px-3 py-2 font-medium">ชื่อสินค้า</th>
@@ -526,6 +538,7 @@ onMounted(async () => {
                     </thead>
                     <tbody>
                         <tr v-for="(item, idx) in editItems" :key="idx" class="border-t border-gray-100 dark:border-gray-800">
+                            <td class="px-3 py-2 text-xs font-mono text-gray-500 whitespace-nowrap">{{ item.doc_no || '-' }}</td>
                             <td class="px-3 py-2">
                                 <div class="w-10 h-10 overflow-hidden rounded border border-gray-200 dark:border-gray-700">
                                     <img :src="getProductImage(item.item_code)" :alt="item.item_code" class="w-full h-full object-contain" @error="handleImageError" />
@@ -549,8 +562,18 @@ onMounted(async () => {
                         </tr>
                     </tbody>
                     <tfoot>
+                        <tr class="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-2 text-right text-sm">ยอดรวมก่อนส่วนลด</td>
+                            <td class="px-3 py-2 text-right">{{ formatNumber(totalBeforeDiscount) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-2 text-right text-sm">ส่วนลดท้ายบิล</td>
+                            <td class="px-3 py-1 text-right">
+                                <InputNumber v-model="totalDiscount" :min="0" :maxFractionDigits="2" inputClass="text-right w-32" />
+                            </td>
+                        </tr>
                         <tr class="border-t-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 font-bold">
-                            <td colspan="7" class="px-3 py-2 text-right">ยอดรวม</td>
+                            <td colspan="8" class="px-3 py-2 text-right">ยอดสุทธิ</td>
                             <td class="px-3 py-2 text-right text-primary text-base">{{ formatNumber(totalAmount) }}</td>
                         </tr>
                     </tfoot>
@@ -561,7 +584,7 @@ onMounted(async () => {
         <!-- Action buttons -->
         <div class="flex justify-between">
             <Button label="ยกเลิก" icon="pi pi-arrow-left" severity="secondary" outlined @click="router.back()" />
-            <Button label="สร้าง PU" icon="pi pi-check" severity="success" @click="showConfirmDialog = true" :disabled="editItems.length === 0 || isSaving || !selectedWarehouse" />
+            <Button label="สร้าง PU" icon="pi pi-check" severity="success" @click="showConfirmDialog = true" :disabled="editItems.length === 0 || isSaving || !selectedWarehouse || !selectedShelf" />
         </div>
 
         <!-- Confirm Dialog -->

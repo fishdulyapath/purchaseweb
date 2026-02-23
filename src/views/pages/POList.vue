@@ -109,9 +109,7 @@ async function saveDetail() {
     isSaving.value = true;
     try {
         const empCode = localStorage.getItem('_empCode') || '';
-        const payload = editItems.value
-            .filter((item) => !item.updateable)
-            .map((item) => ({
+        const payload = editItems.value.map((item) => ({
                 doc_no: selectedDoc.value.doc_no,
                 doc_date: selectedDoc.value.doc_date,
                 doc_time: selectedDoc.value.doc_time,
@@ -140,9 +138,7 @@ async function saveDetail() {
     }
 }
 
-const totalAmount = computed(() =>
-    editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.po_qty) || 0), 0)
-);
+const totalAmount = computed(() => editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.po_qty) || 0), 0));
 
 function formatNumber(value) {
     if (value === undefined || value === null) return '0.00';
@@ -243,13 +239,13 @@ onMounted(() => loadDocs());
         <!-- Detail / Edit Dialog -->
         <Dialog v-model:visible="showDetailDialog" modal header="รายละเอียดใบสั่งซื้อ" :style="{ width: '98%', maxWidth: '1000px' }" :draggable="false" :closable="!isSaving">
             <div v-if="selectedDoc" class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm mb-4">
-                <div><span class="text-gray-500">เลขที่:</span> <span class="font-medium">{{ selectedDoc.doc_no }}</span></div>
+                <div>
+                    <span class="text-gray-500">เลขที่:</span> <span class="font-medium">{{ selectedDoc.doc_no }}</span>
+                </div>
                 <div><span class="text-gray-500">วันที่:</span> {{ selectedDoc.doc_date }} {{ selectedDoc.doc_time }}</div>
                 <div><span class="text-gray-500">เจ้าหนี้:</span> {{ selectedDoc.cust_code }}~{{ selectedDoc.cust_name }}</div>
                 <div><span class="text-gray-500">ผู้สร้าง:</span> {{ selectedDoc.creator_code }}</div>
-                <div v-if="selectedDoc.pra_doc_list" class="col-span-2">
-                    <span class="text-gray-500">เลขที่อนุมัติ PR:</span> {{ selectedDoc.pra_doc_list }}
-                </div>
+                <div v-if="selectedDoc.pra_doc_list" class="col-span-2"><span class="text-gray-500">เลขที่อนุมัติ PR:</span> {{ selectedDoc.pra_doc_list }}</div>
             </div>
 
             <div v-if="isLoadingDetail" class="flex justify-center py-8">
@@ -274,9 +270,7 @@ onMounted(() => loadDocs());
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="(item, idx) in editItems" :key="idx"
-                            class="border-t border-gray-100 dark:border-gray-800"
-                            :class="item.updateable ? 'bg-gray-50 dark:bg-gray-800/30 opacity-60' : ''">
+                        <tr v-for="(item, idx) in editItems" :key="idx" class="border-t border-gray-100 dark:border-gray-800" :class="item.updateable ? 'bg-gray-50 dark:bg-gray-800/30 opacity-60' : ''">
                             <td class="px-3 py-2">
                                 <div class="w-10 h-10 overflow-hidden rounded border border-gray-200 dark:border-gray-700">
                                     <img :src="getProductImage(item.item_code)" :alt="item.item_code" class="w-full h-full object-contain" @error="handleImageError" />
@@ -349,11 +343,11 @@ onMounted(() => loadDocs());
                             <th class="text-left px-3 py-2 font-medium">วันที่</th>
                             <th class="text-left px-3 py-2 font-medium">เจ้าหนี้</th>
                             <th class="text-left px-3 py-2 font-medium">ผู้อนุมัติ</th>
+                            <th class="text-left px-3 py-2 font-medium">หมายเหตุ</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="pr in prDocs" :key="pr.doc_no"
-                            class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                        <tr v-for="pr in prDocs" :key="pr.doc_no" class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                             <td class="px-3 py-2 text-center">
                                 <Checkbox :modelValue="selectedPRs.includes(pr)" :binary="true" @change="selectedPRs.includes(pr) ? selectedPRs.splice(selectedPRs.indexOf(pr), 1) : selectedPRs.push(pr)" />
                             </td>
@@ -361,14 +355,13 @@ onMounted(() => loadDocs());
                             <td class="px-3 py-2 text-gray-500">{{ pr.doc_date }} {{ pr.doc_time }}</td>
                             <td class="px-3 py-2">{{ pr.cust_code }}~{{ pr.cust_name }}</td>
                             <td class="px-3 py-2">{{ pr.approve_code }}</td>
+                            <td class="px-3 py-2 text-gray-500">{{ pr.remark || '-' }}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
-            <div v-if="selectedPRs.length > 0" class="mt-3 p-2 bg-primary-50 dark:bg-primary-900/20 rounded text-sm text-primary">
-                เลือกแล้ว {{ selectedPRs.length }} เอกสาร: {{ selectedPRs.map(p => p.doc_no).join(', ') }}
-            </div>
+            <div v-if="selectedPRs.length > 0" class="mt-3 p-2 bg-primary-50 dark:bg-primary-900/20 rounded text-sm text-primary">เลือกแล้ว {{ selectedPRs.length }} เอกสาร: {{ selectedPRs.map((p) => p.doc_no).join(', ') }}</div>
 
             <template #footer>
                 <Button label="ยกเลิก" icon="pi pi-times" severity="secondary" outlined @click="showSelectPRDialog = false" />

@@ -37,7 +37,8 @@ const router = createRouter({
                     component: () => import('@/views/pages/PRApprove.vue'),
                     meta: {
                         requiresAuth: true,
-                        title: 'อนุมัติเสนอซื้อ'
+                        title: 'อนุมัติเสนอซื้อ',
+                        permissionKey: 'pr_approve'
                     }
                 },
                 // ประวัติเสนอซื้อ
@@ -57,7 +58,8 @@ const router = createRouter({
                     component: () => import('@/views/pages/POList.vue'),
                     meta: {
                         requiresAuth: true,
-                        title: 'ใบสั่งซื้อ'
+                        title: 'ใบสั่งซื้อ',
+                        permissionKey: 'po'
                     }
                 },
                 // สร้าง PO
@@ -67,7 +69,8 @@ const router = createRouter({
                     component: () => import('@/views/pages/POCreate.vue'),
                     meta: {
                         requiresAuth: true,
-                        title: 'สร้างใบสั่งซื้อ'
+                        title: 'สร้างใบสั่งซื้อ',
+                        permissionKey: 'po'
                     }
                 },
                 // ใบรับสินค้า PU
@@ -77,7 +80,8 @@ const router = createRouter({
                     component: () => import('@/views/pages/PUList.vue'),
                     meta: {
                         requiresAuth: true,
-                        title: 'ใบรับสินค้า'
+                        title: 'ใบรับสินค้า',
+                        permissionKey: 'pu'
                     }
                 },
                 // สร้างใบรับสินค้า PU
@@ -87,7 +91,19 @@ const router = createRouter({
                     component: () => import('@/views/pages/PUCreate.vue'),
                     meta: {
                         requiresAuth: true,
-                        title: 'สร้างใบรับสินค้า'
+                        title: 'สร้างใบรับสินค้า',
+                        permissionKey: 'pu'
+                    }
+                },
+                // กำหนดสิทธิ์
+                {
+                    path: 'permission-manage',
+                    name: 'permission-manage',
+                    component: () => import('@/views/pages/PermissionManage.vue'),
+                    meta: {
+                        requiresAuth: true,
+                        requiresSuperAdmin: true,
+                        title: 'กำหนดสิทธิ์'
                     }
                 }
             ]
@@ -131,10 +147,42 @@ router.beforeEach((to, from, next) => {
 
     if (to.meta.requiresAuth && !isAuthenticated) {
         next({ name: 'login' });
-    } else {
-        document.title = to.meta.title ? to.meta.title + ' - ' + import.meta.env.VITE_APP_NAME : import.meta.env.VITE_APP_NAME;
-        next();
+        return;
     }
+
+    // superadmin only pages
+    if (to.meta.requiresSuperAdmin) {
+        const empCode = (localStorage.getItem('_empCode') || '').toUpperCase();
+        if (empCode !== 'SUPERADMIN') {
+            next({ name: 'accessDenied' });
+            return;
+        }
+    }
+
+    // permission-based pages
+    if (to.meta.permissionKey) {
+        const empCode = (localStorage.getItem('_empCode') || '').toUpperCase();
+        // superadmin ข้ามการตรวจสิทธิ์
+        if (empCode !== 'SUPERADMIN') {
+            let allowed = false;
+            try {
+                const permsStr = localStorage.getItem('_empPermissions');
+                if (permsStr) {
+                    const perms = JSON.parse(permsStr);
+                    allowed = perms[to.meta.permissionKey] === 1;
+                }
+            } catch (e) {
+                allowed = false;
+            }
+            if (!allowed) {
+                next({ name: 'accessDenied' });
+                return;
+            }
+        }
+    }
+
+    document.title = to.meta.title ? to.meta.title + ' - ' + import.meta.env.VITE_APP_NAME : import.meta.env.VITE_APP_NAME;
+    next();
 });
 
 export default router;

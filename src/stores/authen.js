@@ -2,7 +2,23 @@
 import router from '@/router';
 import UserService from '@/services/UserService';
 import { useCartStore } from '@/stores/cartStore'; // เพิ่มการนำเข้า cart store
+import axios from 'axios';
 import { defineStore } from 'pinia';
+
+const apiBase = import.meta.env.VITE_APP_API;
+
+async function loadEmpPermissions(empCode) {
+    try {
+        const res = await axios.get(`${apiBase}/getEmpPermission`, { params: { emp_code: empCode } });
+        const permsObj = {};
+        for (const item of res.data?.data || []) {
+            permsObj[item.screen_code] = item.is_allow === 1 || item.is_allow === '1' ? 1 : 0;
+        }
+        localStorage.setItem('_empPermissions', JSON.stringify(permsObj));
+    } catch (e) {
+        localStorage.removeItem('_empPermissions');
+    }
+}
 
 export const useAuthenStore = defineStore('authen', {
     state: () => ({
@@ -131,8 +147,12 @@ export const useAuthenStore = defineStore('authen', {
                     localStorage.setItem('_empCode', empData.user_code);
                     localStorage.removeItem('_userCode'); // ล้างรหัสลูกค้าออกจาก localStorage
 
-                    // ไม่โหลดข้อมูลตะกร้าทันที ให้รอจนกว่าจะมีการยืนยันการตั้งค่าคลัง
-                    // โหลดข้อมูลตะกร้าจะทำในหน้า Login หลังจากยืนยันการตั้งค่าแล้ว
+                    // โหลดสิทธิ์การเข้าหน้าจอ (superadmin ไม่ต้องโหลด)
+                    if (empData.user_code?.toUpperCase() !== 'SUPERADMIN') {
+                        await loadEmpPermissions(empData.user_code);
+                    } else {
+                        localStorage.removeItem('_empPermissions');
+                    }
 
                     return true; // เพิ่มการ return ค่าเพื่อให้หน้า login รู้ว่าล็อกอินสำเร็จ
                 } else {
@@ -188,6 +208,7 @@ export const useAuthenStore = defineStore('authen', {
             localStorage.removeItem('_empData');
             localStorage.removeItem('_userCode');
             localStorage.removeItem('_empCode');
+            localStorage.removeItem('_empPermissions');
 
             // นำทางกลับไปยังหน้า login
             router.push('/auth/login');

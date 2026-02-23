@@ -117,6 +117,64 @@ function handleImageError(event) {
     event.target.src = 'https://upload.wikimedia.org/wikipedia/commons/1/14/No_Image_Available.jpg';
 }
 
+// Images dialog
+const showImagesDialog = ref(false);
+const imagesDoc = ref(null);
+const imagesList = ref([]);
+const isLoadingImages = ref(false);
+const isUploadingImage = ref(false);
+const isDeletingImage = ref(null); // guid_code ที่กำลังลบ
+
+async function openImages(doc) {
+    imagesDoc.value = doc;
+    showImagesDialog.value = true;
+    await loadImages(doc.doc_no);
+}
+
+async function loadImages(docNo) {
+    isLoadingImages.value = true;
+    try {
+        const res = await axios.get(`${apiBase}/getImagesList`, { params: { doc_no: docNo } });
+        imagesList.value = res.data?.data || [];
+    } catch (e) {
+        console.error('loadImages error:', e);
+    } finally {
+        isLoadingImages.value = false;
+    }
+}
+
+async function deleteImage(guidCode) {
+    isDeletingImage.value = guidCode;
+    try {
+        await axios.get(`${apiBase}/deleteDocImage`, { params: { guid_code: guidCode } });
+        imagesList.value = imagesList.value.filter((i) => i.guid_code !== guidCode);
+    } catch (e) {
+        console.error('deleteImage error:', e);
+    } finally {
+        isDeletingImage.value = null;
+    }
+}
+
+function onFileSelected(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const base64 = e.target.result;
+        isUploadingImage.value = true;
+        try {
+            await axios.post(`${apiBase}/saveDocImage`, { doc_no: imagesDoc.value.doc_no, image_file: base64 });
+            await loadImages(imagesDoc.value.doc_no);
+        } catch (err) {
+            console.error('uploadImage error:', err);
+        } finally {
+            isUploadingImage.value = false;
+            event.target.value = '';
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
 onMounted(() => loadDocs());
 </script>
 
@@ -191,7 +249,10 @@ onMounted(() => loadDocs());
                             <td class="px-4 py-3">{{ doc.creator_code }}</td>
                             <td class="px-4 py-3 text-gray-500 text-xs">{{ doc.po_doc_list || '-' }}</td>
                             <td class="px-4 py-3 text-center">
-                                <Button icon="pi pi-pencil" v-tooltip.top="'รายละเอียด/แก้ไข'" severity="info" outlined rounded size="small" @click="openDetail(doc)" />
+                                <div class="flex gap-1 justify-center">
+                                    <Button icon="pi pi-eye" v-tooltip.top="'รายละเอียด'" severity="info" outlined rounded size="small" @click="openDetail(doc)" />
+                                    <Button icon="pi pi-image" v-tooltip.top="'รูปภาพเอกสาร'" severity="secondary" outlined rounded size="small" @click="openImages(doc)" />
+                                </div>
                             </td>
                         </tr>
                     </tbody>
@@ -224,6 +285,7 @@ onMounted(() => loadDocs());
                 <table class="w-full text-sm">
                     <thead class="bg-gray-50 dark:bg-gray-800">
                         <tr>
+                            <th class="text-left px-3 py-2 font-medium">เลขที่ PO</th>
                             <th class="text-left px-3 py-2 font-medium w-12">รูป</th>
                             <th class="text-left px-3 py-2 font-medium">รหัส</th>
                             <th class="text-left px-3 py-2 font-medium">ชื่อสินค้า</th>
@@ -235,6 +297,7 @@ onMounted(() => loadDocs());
                     </thead>
                     <tbody>
                         <tr v-for="(item, idx) in editItems" :key="idx" class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                            <td class="px-3 py-2 text-xs font-mono text-gray-500 whitespace-nowrap">{{ item.ref_doc_no || '-' }}</td>
                             <td class="px-3 py-2">
                                 <div class="w-10 h-10 overflow-hidden rounded border border-gray-200 dark:border-gray-700">
                                     <img :src="getProductImage(item.item_code)" :alt="item.item_code" class="w-full h-full object-contain" @error="handleImageError" />
@@ -252,8 +315,16 @@ onMounted(() => loadDocs());
                     </tbody>
                     <tfoot>
                         <tr class="border-t-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 font-bold">
-                            <td colspan="6" class="px-3 py-2 text-right">ยอดรวม</td>
+                            <td colspan="7" class="px-3 py-2 text-right">ยอดรวม</td>
                             <td class="px-3 py-2 text-right text-primary">{{ formatNumber(totalAmount) }}</td>
+                        </tr>
+                        <tr v-if="selectedDoc?.total_discount && parseFloat(selectedDoc.total_discount) !== 0" class="bg-gray-50 dark:bg-gray-800 text-sm">
+                            <td colspan="7" class="px-3 py-2 text-right text-gray-500">ส่วนลดท้ายบิล</td>
+                            <td class="px-3 py-2 text-right text-orange-500 font-medium">{{ formatNumber(selectedDoc.total_discount) }}</td>
+                        </tr>
+                        <tr v-if="selectedDoc?.total_discount && parseFloat(selectedDoc.total_discount) !== 0" class="border-t border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 font-bold">
+                            <td colspan="7" class="px-3 py-2 text-right">ยอดสุทธิ</td>
+                            <td class="px-3 py-2 text-right text-primary text-base">{{ formatNumber(selectedDoc.total_amount) }}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -318,6 +389,57 @@ onMounted(() => loadDocs());
             <template #footer>
                 <Button label="ยกเลิก" icon="pi pi-times" severity="secondary" outlined @click="showSelectPODialog = false" />
                 <Button label="ดำเนินการต่อ" icon="pi pi-arrow-right" severity="success" @click="proceedCreatePU" :disabled="selectedPOs.length === 0" />
+            </template>
+        </Dialog>
+
+        <!-- Images Dialog -->
+        <Dialog v-model:visible="showImagesDialog" modal :header="`รูปภาพเอกสาร - ${imagesDoc?.doc_no}`" :style="{ width: '95%', maxWidth: '800px' }" :draggable="false">
+            <div v-if="isLoadingImages" class="flex justify-center py-8">
+                <ProgressSpinner style="width: 36px; height: 36px" strokeWidth="4" />
+            </div>
+
+            <div v-else>
+                <!-- Upload button -->
+                <div class="mb-4">
+                    <label class="cursor-pointer">
+                        <Button
+                            icon="pi pi-upload"
+                            label="อัพโหลดรูป"
+                            severity="success"
+                            :loading="isUploadingImage"
+                            @click="$refs.fileInput.click()"
+                        />
+                        <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected" />
+                    </label>
+                </div>
+
+                <!-- Images grid -->
+                <div v-if="imagesList.length === 0" class="text-center text-gray-400 py-8">
+                    <i class="pi pi-image text-4xl mb-2 block"></i>
+                    ไม่มีรูปภาพ
+                </div>
+                <div v-else class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div v-for="img in imagesList" :key="img.guid_code" class="relative group rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                        <img
+                            :src="`${apiBase}/getDocImage/${img.guid_code}`"
+                            class="w-full  object-contain bg-white dark:bg-gray-900"
+                            @error="(e) => e.target.src = 'https://upload.wikimedia.org/wikipedia/commons/1/14/No_Image_Available.jpg'"
+                        />
+                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Button
+                                icon="pi pi-trash"
+                                severity="danger"
+                                rounded
+                                :loading="isDeletingImage === img.guid_code"
+                                @click="deleteImage(img.guid_code)"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <template #footer>
+                <Button label="ปิด" icon="pi pi-times" severity="secondary" outlined @click="showImagesDialog = false" />
             </template>
         </Dialog>
     </div>
