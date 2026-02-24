@@ -1,11 +1,13 @@
 <script setup>
 import ProductService from '@/services/ProductService';
 import axios from 'axios';
-import { computed, onMounted, ref } from 'vue';
+import { useToast } from 'primevue/usetoast';
+import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 const apiBase = import.meta.env.VITE_APP_API;
 const router = useRouter();
+const toast = useToast();
 
 const today = new Date();
 const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -36,6 +38,20 @@ async function openSelectPO() {
     await loadPODocs();
 }
 
+function togglePO(po) {
+    const idx = selectedPOs.value.indexOf(po);
+    if (idx !== -1) {
+        selectedPOs.value.splice(idx, 1);
+        return;
+    }
+    // ตรวจว่าเจ้าหนี้ตรงกับที่เลือกไว้แล้ว
+    if (selectedPOs.value.length > 0 && selectedPOs.value[0].cust_code !== po.cust_code) {
+        toast.add({ severity: 'warn', summary: 'เจ้าหนี้ไม่ตรงกัน', detail: `กรุณาเลือก PO ของเจ้าหนี้ "${selectedPOs.value[0].cust_name}" เท่านั้น`, life: 4000 });
+        return;
+    }
+    selectedPOs.value.push(po);
+}
+
 async function loadPODocs() {
     isLoadingPO.value = true;
     try {
@@ -63,9 +79,6 @@ const selectedDoc = ref(null);
 const editItems = ref([]);
 const isLoadingDetail = ref(false);
 
-const totalAmount = computed(() =>
-    editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0)
-);
 
 async function loadDocs() {
     isLoading.value = true;
@@ -88,7 +101,7 @@ async function openDetail(doc) {
     showDetailDialog.value = true;
     isLoadingDetail.value = true;
     try {
-        const res = await axios.get(`${apiBase}/getDocDetail`, { params: { doc_no: doc.doc_no } });
+        const res = await axios.get(`${apiBase}/getPUDocDetail`, { params: { doc_no: doc.doc_no } });
         const data = res.data?.data || {};
         editItems.value = (data.items || []).map((item) => ({
             ...item,
@@ -267,6 +280,10 @@ onMounted(() => loadDocs());
                 <div><span class="text-gray-500">วันที่:</span> {{ selectedDoc.doc_date }} {{ selectedDoc.doc_time }}</div>
                 <div><span class="text-gray-500">เจ้าหนี้:</span> {{ selectedDoc.cust_code }}~{{ selectedDoc.cust_name }}</div>
                 <div><span class="text-gray-500">ผู้สร้าง:</span> {{ selectedDoc.emp_code }}</div>
+                <div>
+                    <span class="text-gray-500">ประเภทภาษี:</span>
+                    {{ ['ภาษีแยกนอก', 'ภาษีรวมใน', 'ภาษีอัตราศูนย์', 'ไม่กระทบภาษี'][parseInt(selectedDoc.tax_type)] ?? '-' }}
+                </div>
                 <div v-if="selectedDoc.po_doc_list" class="col-span-2">
                     <span class="text-gray-500">เลขที่ PO:</span> {{ selectedDoc.po_doc_list }}
                 </div>
@@ -313,18 +330,34 @@ onMounted(() => loadDocs());
                             </td>
                         </tr>
                     </tbody>
-                    <tfoot>
+                    <tfoot class="text-sm">
+                        <tr class="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                            <td colspan="7" class="px-3 py-1.5 text-right text-gray-500">มูลค่าสินค้า</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(selectedDoc?.total_value) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="7" class="px-3 py-1.5 text-right text-gray-500">ส่วนลดท้ายบิล</td>
+                            <td class="px-3 py-1.5 text-right text-orange-500">{{ formatNumber(selectedDoc?.total_discount) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="7" class="px-3 py-1.5 text-right text-gray-500">ยอดก่อนภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(selectedDoc?.total_before_vat) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="7" class="px-3 py-1.5 text-right text-gray-500">ภาษีมูลค่าเพิ่ม</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(selectedDoc?.total_vat_value) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="7" class="px-3 py-1.5 text-right text-gray-500">ยอดหลังภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(selectedDoc?.total_after_vat) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="7" class="px-3 py-1.5 text-right text-gray-500">ยกเว้นภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(selectedDoc?.total_except_vat) }}</td>
+                        </tr>
                         <tr class="border-t-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 font-bold">
-                            <td colspan="7" class="px-3 py-2 text-right">ยอดรวม</td>
-                            <td class="px-3 py-2 text-right text-primary">{{ formatNumber(totalAmount) }}</td>
-                        </tr>
-                        <tr v-if="selectedDoc?.total_discount && parseFloat(selectedDoc.total_discount) !== 0" class="bg-gray-50 dark:bg-gray-800 text-sm">
-                            <td colspan="7" class="px-3 py-2 text-right text-gray-500">ส่วนลดท้ายบิล</td>
-                            <td class="px-3 py-2 text-right text-orange-500 font-medium">{{ formatNumber(selectedDoc.total_discount) }}</td>
-                        </tr>
-                        <tr v-if="selectedDoc?.total_discount && parseFloat(selectedDoc.total_discount) !== 0" class="border-t border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 font-bold">
-                            <td colspan="7" class="px-3 py-2 text-right">ยอดสุทธิ</td>
-                            <td class="px-3 py-2 text-right text-primary text-base">{{ formatNumber(selectedDoc.total_amount) }}</td>
+                            <td colspan="7" class="px-3 py-2 text-right">มูลค่าสุทธิ</td>
+                            <td class="px-3 py-2 text-right text-primary text-base">{{ formatNumber(selectedDoc?.total_amount) }}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -371,7 +404,7 @@ onMounted(() => loadDocs());
                     <tbody>
                         <tr v-for="po in poDocs" :key="po.doc_no" class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                             <td class="px-3 py-2 text-center">
-                                <Checkbox :modelValue="selectedPOs.includes(po)" :binary="true" @change="selectedPOs.includes(po) ? selectedPOs.splice(selectedPOs.indexOf(po), 1) : selectedPOs.push(po)" />
+                                <Checkbox :modelValue="selectedPOs.includes(po)" :binary="true" @click.prevent="togglePO(po)" />
                             </td>
                             <td class="px-3 py-2 font-medium text-primary">{{ po.doc_no }}</td>
                             <td class="px-3 py-2 text-gray-500">{{ po.doc_date }} {{ po.doc_time }}</td>

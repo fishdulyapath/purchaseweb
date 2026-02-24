@@ -280,10 +280,10 @@ function handleImageError(event) {
 
         <div class="layout-topbar-actions" :class="isAuthenticated ? 'mt-3' : ''">
             <!-- แสดงสินค้าเฉพาะสินค้าที่มียอดคงเหลือ - ย้ายออกจาก layout-config-menu -->
-            <div v-if="isAuthenticated" class="flex items-center justify-center gap-3 px-4 py-2 dark:bg-gray-700 rounded-lg">
+            <!-- <div v-if="isAuthenticated" class="flex items-center justify-center gap-3 px-4 py-2 dark:bg-gray-700 rounded-lg">
                 <label class="text-sm cursor-pointer whitespace-nowrap" @click="instockFilterActive = !instockFilterActive"> เฉพาะสินค้าที่มีคงเหลือ </label>
                 <ToggleSwitch v-model="instockFilterActive" />
-            </div>
+            </div> -->
 
             <div class="layout-config-menu">
                 <!-- เพิ่มปุ่มค้นหารายการโปรด - แสดงเฉพาะเมื่อล็อกอินแล้ว -->

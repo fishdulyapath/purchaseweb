@@ -34,7 +34,22 @@ const docTime = ref(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
 const remark = ref('');
 const custCode = ref('');
 const custName = ref('');
+const supplierDetail = ref(null);
 const editItems = ref([]);
+
+async function loadSupplierDetail(code) {
+    if (!code) {
+        supplierDetail.value = null;
+        return;
+    }
+    try {
+        const res = await axios.get(`${apiBase}/getSupplierDetail`, { params: { cust_code: code } });
+        const d = res.data;
+        supplierDetail.value = d?.data?.[0] || d?.data || (d?.cust_code ? d : null);
+    } catch (e) {
+        supplierDetail.value = null;
+    }
+}
 // เก็บทุก items ของ PO (รวม updateable=1) เพื่อใช้เช็ค doc_success
 const allPoItems = ref([]);
 
@@ -68,24 +83,93 @@ async function onWarehouseChange() {
     }
 }
 
+// ประเภทการขาย / ประเภทภาษี
+const saleType = ref(0);
+const saleTypeOptions = [
+    { label: '0 - สินค้าเงินเชื่อ', value: 0 },
+    { label: '1 - สินค้าเงินสด', value: 1 },
+    { label: '2 - สินค้าเงินเชื่อ (บริการ)', value: 2 },
+    { label: '3 - สินค้าเงินสด (บริการ)', value: 3 }
+];
+
+const taxType = ref(0);
+const taxTypeOptions = [
+    { label: '0 - ภาษีแยกนอก', value: 0 },
+    { label: '1 - ภาษีรวมใน', value: 1 },
+    { label: '2 - ภาษีอัตราศูนย์', value: 2 },
+    { label: '3 - ไม่กระทบภาษี', value: 3 }
+];
+
+const vatRate = ref(7);
 const totalDiscount = ref(0);
 
-const totalBeforeDiscount = computed(() =>
-    editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0)
-);
+// มูลค่าสินค้าทั้งหมด (ก่อนหักส่วนลด)
+const totalValue = computed(() => editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0));
 
-const totalAmount = computed(() => Math.max(0, totalBeforeDiscount.value - (parseFloat(totalDiscount.value) || 0)));
+// มูลค่ายกเว้นภาษี (item tax_type = '1')
+const totalExceptVat = computed(() => editItems.value.filter((i) => String(i.tax_type) === '1').reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0));
+
+// มูลค่าสินค้าที่ต้องคิดภาษี (item tax_type = '0') หลังหักส่วนลด
+const taxableBase = computed(() => {
+    const vatItems = editItems.value.filter((i) => String(i.tax_type) !== '1').reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0);
+    const discount = parseFloat(totalDiscount.value) || 0;
+    // ส่วนลดหักจากสินค้าที่มีภาษีก่อน
+    return Math.max(0, vatItems - discount);
+});
+
+// คำนวณตามประเภทภาษีเอกสาร (taxType)
+const vatCalc = computed(() => {
+    const rate = parseFloat(vatRate.value) || 0;
+    const base = taxableBase.value;
+    const discount = parseFloat(totalDiscount.value) || 0;
+    const exceptVat = totalExceptVat.value;
+    const tv = totalValue.value;
+
+    let beforeVat = 0;
+    let vatValue = 0;
+    let afterVat = 0;
+    let amount = 0;
+
+    if (taxType.value === 0) {
+        // ภาษีแยกนอก: ยอดก่อนภาษี = ยอดสินค้ามีภาษี-ส่วนลด, VAT คิดเพิ่ม
+        beforeVat = base;
+        vatValue = parseFloat(((beforeVat * rate) / 100).toFixed(2));
+        afterVat = parseFloat((beforeVat + vatValue).toFixed(2));
+        amount = parseFloat((afterVat + exceptVat).toFixed(2));
+    } else if (taxType.value === 1) {
+        // ภาษีรวมใน: แยก VAT ออกจากยอด
+        afterVat = base; // ยอดรวม VAT แล้ว
+        beforeVat = parseFloat((afterVat / (1 + rate / 100)).toFixed(2));
+        vatValue = parseFloat((afterVat - beforeVat).toFixed(2));
+        amount = parseFloat((tv - discount).toFixed(2));
+    } else {
+        // ภาษีอัตราศูนย์ (2) หรือไม่กระทบภาษี (3)
+        beforeVat = 0;
+        vatValue = 0;
+        afterVat = 0;
+        amount = parseFloat((tv - discount).toFixed(2));
+    }
+
+    return { beforeVat, vatValue, afterVat, exceptVat, amount };
+});
+
+const totalAmount = computed(() => vatCalc.value.amount);
+
+async function loadVatRate() {
+    try {
+        const res = await axios.get(`${apiBase}/getVatRate`);
+        vatRate.value = parseFloat(res.data?.vat_rate) || 7;
+    } catch (e) {
+        vatRate.value = 7;
+    }
+}
 
 async function loadPOItems() {
     if (selectedPOs.value.length === 0) return;
     isLoadingItems.value = true;
     try {
         // ดึงทีละ PO แล้วรวม items เข้าด้วยกัน
-        const results = await Promise.all(
-            selectedPOs.value.map((po) =>
-                axios.get(`${apiBase}/getDocPoDetail`, { params: { doc_no: po.doc_no } }).then((res) => ({ res, po }))
-            )
-        );
+        const results = await Promise.all(selectedPOs.value.map((po) => axios.get(`${apiBase}/getDocPoDetail`, { params: { doc_no: po.doc_no } }).then((res) => ({ res, po }))));
         const allItems = [];
         const allPo = [];
         for (const { res, po } of results) {
@@ -116,6 +200,7 @@ async function loadPOItems() {
             custCode.value = selectedPOs.value[0].cust_code;
             custName.value = selectedPOs.value[0].cust_name || '';
         }
+        await loadSupplierDetail(custCode.value);
     } catch (e) {
         console.error('loadPOItems error:', e);
         toast.add({ severity: 'error', summary: 'เกิดข้อผิดพลาด', detail: 'ไม่สามารถโหลดรายการสินค้าได้', life: 3000 });
@@ -148,11 +233,8 @@ async function createPU() {
             shelf_code: item.shelf_code || shelfCode
         }));
 
-        const totalValue = mappedItems.reduce((s, i) => s + (parseFloat(i.sum_amount) || 0), 0);
-        const totalExceptVat = mappedItems.filter((i) => i.tax_type === '1').reduce((s, i) => s + (parseFloat(i.sum_amount) || 0), 0);
-        const totalAfterVat = mappedItems.filter((i) => i.tax_type === '0').reduce((s, i) => s + (parseFloat(i.sum_amount) || 0), 0);
+        const calc = vatCalc.value;
         const discountValue = parseFloat(totalDiscount.value) || 0;
-        const netAmount = Math.max(0, totalValue - discountValue);
 
         // คำนวณ doc_success แยกตาม PO แต่ละใบ
         // รายการใน allPoItems มี doc_no ของ PO ต้นทาง
@@ -162,9 +244,7 @@ async function createPU() {
             const poItems = allPoItems.value.filter((i) => i.doc_no === po.doc_no);
             const allReceived = poItems.every((poItem) => {
                 if (poItem.balance_qty <= 0) return true; // รับครบแล้วจาก PU ก่อนหน้า
-                const edit = editItems.value.find(
-                    (e) => e.item_code === poItem.item_code && e.unit_code === poItem.unit_code && e.doc_no === po.doc_no
-                );
+                const edit = editItems.value.find((e) => e.item_code === poItem.item_code && e.unit_code === poItem.unit_code && e.doc_no === po.doc_no);
                 const receivedQty = parseFloat(edit?.qty) || 0;
                 return receivedQty >= (parseFloat(poItem.po_qty) || 0);
             });
@@ -179,14 +259,26 @@ async function createPU() {
             branch_code: whCode,
             emp_code: empCode,
             remark: remark.value,
-            total_value: String(totalValue),
-            total_except_vat: String(totalExceptVat),
-            total_after_vat: String(totalAfterVat),
+            sale_type: String(saleType.value),
+            tax_type: String(taxType.value),
+            vat_rate: String(vatRate.value),
+            total_value: String(totalValue.value),
             total_discount: String(discountValue),
-            total_amount: String(netAmount),
+            total_before_vat: String(calc.beforeVat),
+            total_vat_value: String(calc.vatValue),
+            total_after_vat: String(calc.afterVat),
+            total_except_vat: String(calc.exceptVat),
+            total_amount: String(calc.amount),
+            ap_cust_code: supplierDetail.value?.cust_code || custCode.value,
+            ap_cust_name: supplierDetail.value?.cust_name || custName.value,
+            ap_branch_code: supplierDetail.value?.branch_code || '',
+            ap_branch_type: supplierDetail.value?.branch_type || '0',
+            ap_tax_id: supplierDetail.value?.tax_id || '',
             doc_list: docList,
             items: mappedItems
         };
+
+        console.log('createPU payload:', payload);
 
         await axios.post(`${apiBase}/createPUDoc`, payload);
         toast.add({ severity: 'success', summary: 'สร้าง PU สำเร็จ', detail: docNo.value, life: 4000 });
@@ -255,9 +347,7 @@ async function onBarcodeSubmit() {
         }
 
         // ถ้ามีสินค้านี้ใน list อยู่แล้ว (barcode + unit_code เดียวกัน) ให้เพิ่ม qty
-        const existing = editItems.value.find(
-            (i) => i.barcode === data.barcode && i.unit_code === data.unit_code
-        );
+        const existing = editItems.value.find((i) => i.barcode === data.barcode && i.unit_code === data.unit_code);
         if (existing) {
             existing.qty = (parseFloat(existing.qty) || 0) + qty;
         } else {
@@ -315,9 +405,7 @@ async function onSearchSubmit() {
 }
 
 function addFromSearch(data, qty = 1) {
-    const existing = editItems.value.find(
-        (i) => i.barcode === data.barcode && i.unit_code === data.unit_code
-    );
+    const existing = editItems.value.find((i) => i.barcode === data.barcode && i.unit_code === data.unit_code);
     if (existing) {
         existing.qty = (parseFloat(existing.qty) || 0) + qty;
     } else {
@@ -372,7 +460,7 @@ onMounted(async () => {
     } catch (e) {
         console.error('parse selectedPOs error:', e);
     }
-    await Promise.all([loadWarehouses(), loadPOItems()]);
+    await Promise.all([loadWarehouses(), loadPOItems(), loadVatRate()]);
     await nextTick();
     const el = barcodeInputRef.value?.$el;
     if (el) (el.tagName === 'INPUT' ? el : el.querySelector('input'))?.focus();
@@ -405,7 +493,7 @@ onMounted(async () => {
                 </div>
                 <div class="flex flex-col gap-1">
                     <label class="text-sm font-medium">เจ้าหนี้</label>
-                    <InputText :modelValue="`${custCode}${custName ? '~' + custName : ''}`" class="w-full bg-gray-50 dark:bg-gray-800" readonly />
+                    <InputText :modelValue="`${custCode}${supplierDetail ? ' - ' + supplierDetail.cust_name : ''}`" class="w-full bg-gray-50 dark:bg-gray-800" readonly />
                 </div>
                 <div class="flex flex-col gap-1">
                     <label class="text-sm font-medium">คลัง</label>
@@ -414,6 +502,14 @@ onMounted(async () => {
                 <div class="flex flex-col gap-1">
                     <label class="text-sm font-medium">ที่เก็บ</label>
                     <Select v-model="selectedShelf" :options="shelfList" optionLabel="name" placeholder="เลือกที่เก็บ" class="w-full" :disabled="!selectedWarehouse" :loading="isLoadingShelf" />
+                </div>
+                <!-- <div class="flex flex-col gap-1">
+                    <label class="text-sm font-medium">ประเภทการขาย</label>
+                    <Select v-model="saleType" :options="saleTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+                </div> -->
+                <div class="flex flex-col gap-1">
+                    <label class="text-sm font-medium">ประเภทภาษี</label>
+                    <Select v-model="taxType" :options="taxTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
                 </div>
                 <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-1">
                     <label class="text-sm font-medium">หมายเหตุ</label>
@@ -437,15 +533,7 @@ onMounted(async () => {
                 <div class="flex gap-2 flex-1 items-end">
                     <div class="flex flex-col gap-1 flex-1">
                         <label class="text-sm font-medium">สแกนบาร์โค้ด <span class="text-gray-400 font-normal text-xs">(เช่น 10*8850025122230)</span></label>
-                        <InputText
-                            ref="barcodeInputRef"
-                            v-model="barcodeInput"
-                            placeholder="สแกนหรือพิมพ์บาร์โค้ด"
-                            class="w-full font-mono"
-                            @keyup.enter="onBarcodeSubmit"
-                            :disabled="isScanning"
-                            autofocus
-                        />
+                        <InputText ref="barcodeInputRef" v-model="barcodeInput" placeholder="สแกนหรือพิมพ์บาร์โค้ด" class="w-full font-mono" @keyup.enter="onBarcodeSubmit" :disabled="isScanning" autofocus />
                     </div>
                     <Button icon="pi pi-barcode" @click="onBarcodeSubmit" :loading="isScanning" :disabled="!barcodeInput.trim()" v-tooltip.top="'เพิ่มจากบาร์โค้ด'" />
                 </div>
@@ -456,13 +544,7 @@ onMounted(async () => {
                 <div class="flex gap-2 flex-1 items-end">
                     <div class="flex flex-col gap-1 flex-1">
                         <label class="text-sm font-medium">ค้นหาสินค้า</label>
-                        <InputText
-                            v-model="searchQuery"
-                            placeholder="ชื่อสินค้า / รหัส / บาร์โค้ด"
-                            class="w-full"
-                            @keyup.enter="onSearchSubmit"
-                            :disabled="isSearching"
-                        />
+                        <InputText v-model="searchQuery" placeholder="ชื่อสินค้า / รหัส / บาร์โค้ด" class="w-full" @keyup.enter="onSearchSubmit" :disabled="isSearching" />
                     </div>
                     <Button icon="pi pi-search" @click="onSearchSubmit" :loading="isSearching" :disabled="!searchQuery.trim()" v-tooltip.top="'ค้นหาสินค้า'" />
                 </div>
@@ -561,19 +643,35 @@ onMounted(async () => {
                             </td>
                         </tr>
                     </tbody>
-                    <tfoot>
+                    <tfoot class="text-sm">
                         <tr class="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                            <td colspan="8" class="px-3 py-2 text-right text-sm">ยอดรวมก่อนส่วนลด</td>
-                            <td class="px-3 py-2 text-right">{{ formatNumber(totalBeforeDiscount) }}</td>
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">มูลค่าสินค้า</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(totalValue) }}</td>
                         </tr>
                         <tr class="bg-gray-50 dark:bg-gray-800">
-                            <td colspan="8" class="px-3 py-2 text-right text-sm">ส่วนลดท้ายบิล</td>
-                            <td class="px-3 py-1 text-right">
+                            <td colspan="8" class="px-3 py-1 text-right text-gray-600 dark:text-gray-400">ส่วนลด</td>
+                            <td class="px-3 py-0.5 text-right">
                                 <InputNumber v-model="totalDiscount" :min="0" :maxFractionDigits="2" inputClass="text-right w-32" />
                             </td>
                         </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">อัตราภาษี {{ vatRate }}% &nbsp;·&nbsp; ยอดก่อนภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.beforeVat) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">ภาษีมูลค่าเพิ่ม</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.vatValue) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">มูลค่าหลังคิดภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.afterVat) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-600 dark:text-gray-400">มูลค่ายกเว้นภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.exceptVat) }}</td>
+                        </tr>
                         <tr class="border-t-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 font-bold">
-                            <td colspan="8" class="px-3 py-2 text-right">ยอดสุทธิ</td>
+                            <td colspan="8" class="px-3 py-2 text-right">มูลค่าสุทธิ</td>
                             <td class="px-3 py-2 text-right text-primary text-base">{{ formatNumber(totalAmount) }}</td>
                         </tr>
                     </tfoot>
@@ -593,7 +691,9 @@ onMounted(async () => {
                 <i class="pi pi-question-circle text-3xl text-primary mt-1"></i>
                 <div>
                     <div class="font-medium mb-2">ยืนยันการสร้างใบรับสินค้า?</div>
-                    <div class="text-sm text-gray-500 mb-1">เลขที่: <span class="font-mono font-medium text-gray-800 dark:text-gray-200">{{ docNo }}</span></div>
+                    <div class="text-sm text-gray-500 mb-1">
+                        เลขที่: <span class="font-mono font-medium text-gray-800 dark:text-gray-200">{{ docNo }}</span>
+                    </div>
                     <div class="text-sm text-gray-500 mb-1">เจ้าหนี้: {{ custCode }}{{ custName ? '~' + custName : '' }}</div>
                     <div class="text-sm text-gray-500 mb-1">คลัง: {{ selectedWarehouse?.name }}{{ selectedShelf ? ' / ' + selectedShelf.name : '' }}</div>
                     <div class="text-sm text-gray-500 mb-1">รายการสินค้า: {{ editItems.length }} รายการ</div>

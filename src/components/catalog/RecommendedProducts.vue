@@ -268,13 +268,13 @@ function handleFavoriteChanged(data) {
 <template>
     <Toast position="top-right" />
     <!-- ส่วนสินค้าแนะนำด้านบน -->
-    <section class="mb-1 relative">
+    <!-- <section class="mb-1 relative">
         <div class="flex justify-between items-center px-4 py-3">
             <h2 class="font-semibold text-xl flex items-center">
                 <i class="pi pi-star-fill text-yellow-500 mr-2"></i>
                 สินค้าแนะนำ
             </h2>
-            <!-- ปุ่มเลื่อนซ้าย-ขวา -->
+
             <div class="flex gap-2">
                 <Button icon="pi pi-chevron-left" rounded outlined size="small" aria-label="เลื่อนไปทางซ้าย" @click="scrollLeft" />
                 <Button icon="pi pi-chevron-right" rounded outlined size="small" aria-label="เลื่อนไปทางขวา" @click="scrollRight" />
@@ -282,10 +282,9 @@ function handleFavoriteChanged(data) {
         </div>
 
         <div class="relative">
-            <!-- คอนเทนเนอร์สำหรับการเลื่อน -->
+
             <div ref="scrollContainer" class="overflow-x-auto pb-2 hide-scrollbar" @scroll="handleScroll" @mouseenter="handleMouseEnter" @mouseleave="handleMouseLeave">
-                <div class="flex gap-3 px-4" style="width: max-content; min-width: 100%">
-                    <!-- Skeleton Loading -->
+
                     <template v-if="initialLoading">
                         <div v-for="i in 5" :key="i" class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden shadow-sm" style="width: 140px; min-width: 140px">
                             <Skeleton height="128px" />
@@ -300,7 +299,7 @@ function handleFavoriteChanged(data) {
                         </div>
                     </template>
 
-                    <!-- Actual Products -->
+
                     <template v-else>
                         <div
                             v-for="product in recommendedProducts"
@@ -312,12 +311,11 @@ function handleFavoriteChanged(data) {
                             <div class="relative">
                                 <img :src="product.image" :alt="product.item_name" class="w-full h-32 object-contain" @error="$event.target.src = product.imageFallback" />
 
-                                <!-- สถานะสินค้า -->
                                 <div class="dark:bg-surface-900 absolute rounded-border" style="left: 3px; top: 3px">
                                     <Tag :value="product.sold_out === '1' ? 'OUTOFSTOCK' : 'INSTOCK'" :severity="getInventoryStatus(product.sold_out)" style="font-size: 0.65rem; padding: 0.15rem 0.3rem" />
                                 </div>
 
-                                <!-- แสดงปุ่มรายการโปรด (ใช้รูปแบบใหม่) -->
+
                                 <div class="absolute right-1 top-1 cursor-pointer" @click.stop="toggleFavorite(product, $event)">
                                     <Button
                                         :icon="product.favorite_item === '1' ? 'pi pi-heart-fill' : 'pi pi-heart'"
@@ -331,19 +329,18 @@ function handleFavoriteChanged(data) {
                             </div>
 
                             <div class="p-2">
-                                <!-- ชื่อหมวดหมู่ -->
+
                                 <div class="text-xs text-gray-500 truncate">
                                     {{ product.category }}
                                 </div>
 
-                                <!-- ชื่อสินค้า -->
+
                                 <div class="text-xs sm:text-sm font-medium line-clamp-2 product-name" v-tooltip="product.item_name">
                                     {{ product.item_name }}
                                 </div>
                             </div>
                         </div>
 
-                        <!-- ตัวแสดงสถานะการโหลด -->
                         <div v-if="loadingRecommended && recommendedProducts.length > 0" class="flex items-center justify-center min-w-[60px]">
                             <ProgressSpinner style="width: 30px" />
                         </div>
@@ -351,7 +348,7 @@ function handleFavoriteChanged(data) {
                 </div>
             </div>
         </div>
-    </section>
+    </section> -->
 
     <!-- ProductDetailDialog -->
     <ProductDetailDialog v-model:visible="showProductDetail" :item-code="selectedProductCode" @added-to-cart="handleAddedToCart" @favorite-changed="handleFavoriteChanged" />

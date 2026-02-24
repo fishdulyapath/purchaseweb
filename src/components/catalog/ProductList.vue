@@ -838,9 +838,9 @@ const shouldShowTireYearSelector = computed(() => {
                         <img :src="product.image" :alt="product.item_name" class="w-full aspect-square object-contain" @error="$event.target.src = product.imageFallback" />
 
                         <!-- สถานะสินค้า -->
-                        <div class="dark:bg-surface-900 absolute rounded-border" style="left: 0px; top: 0px">
+                        <!-- <div class="dark:bg-surface-900 absolute rounded-border" style="left: 0px; top: 0px">
                             <Tag v-if="product.sold_out == '1'" :value="getInventoryLabel(product.sold_out)" severity="warn" class="inventory-tag" :class="{ 'out-of-stock': product.sold_out === '1' }" />
-                        </div>
+                        </div> -->
 
                         <!-- แสดงปุ่มรายการโปรด (สามารถคลิกได้) -->
                         <div v-if="isAuthenticated" class="absolute right-2 top-2 cursor-pointer" @click.stop="toggleFavorite(product, $event)">

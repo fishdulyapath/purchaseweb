@@ -41,6 +41,19 @@ async function loadPRDocs() {
     }
 }
 
+function togglePR(pr) {
+    const idx = selectedPRs.value.indexOf(pr);
+    if (idx !== -1) {
+        selectedPRs.value.splice(idx, 1);
+        return;
+    }
+    if (selectedPRs.value.length > 0 && selectedPRs.value[0].cust_code !== pr.cust_code) {
+        toast.add({ severity: 'warn', summary: 'เจ้าหนี้ไม่ตรงกัน', detail: `กรุณาเลือก PRA ของเจ้าหนี้ "${selectedPRs.value[0].cust_name}" เท่านั้น`, life: 4000 });
+        return;
+    }
+    selectedPRs.value.push(pr);
+}
+
 function proceedCreatePO() {
     if (selectedPRs.value.length === 0) return;
     showSelectPRDialog.value = false;
@@ -349,7 +362,7 @@ onMounted(() => loadDocs());
                     <tbody>
                         <tr v-for="pr in prDocs" :key="pr.doc_no" class="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                             <td class="px-3 py-2 text-center">
-                                <Checkbox :modelValue="selectedPRs.includes(pr)" :binary="true" @change="selectedPRs.includes(pr) ? selectedPRs.splice(selectedPRs.indexOf(pr), 1) : selectedPRs.push(pr)" />
+                                <Checkbox :modelValue="selectedPRs.includes(pr)" :binary="true" @click.prevent="togglePR(pr)" />
                             </td>
                             <td class="px-3 py-2 font-medium text-primary">{{ pr.doc_no }}</td>
                             <td class="px-3 py-2 text-gray-500">{{ pr.doc_date }} {{ pr.doc_time }}</td>
