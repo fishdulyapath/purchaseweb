@@ -122,23 +122,38 @@ async function saveDetail() {
     isSaving.value = true;
     try {
         const empCode = localStorage.getItem('_empCode') || '';
-        const payload = editItems.value.map((item) => ({
-                doc_no: selectedDoc.value.doc_no,
-                doc_date: selectedDoc.value.doc_date,
-                doc_time: selectedDoc.value.doc_time,
-                cust_code: selectedDoc.value.cust_code,
-                emp_code: empCode,
-                item_code: item.item_code,
-                item_name: item.item_name,
-                unit_code: item.unit_code,
-                barcode: item.barcode || '',
-                qty: String(item.po_qty),
-                price: String(item.price),
-                stand_value: item.stand_value || '1',
-                divide_value: item.divide_value || '1',
-                ratio: item.ratio || '1'
-            }));
-        await axios.post(`${apiBase}/updatePoDetail`, payload, {
+        const calc = vatCalc.value;
+        const discount = parseFloat(selectedDoc.value.total_discount) || 0;
+        const header = {
+            doc_no: selectedDoc.value.doc_no,
+            doc_date: selectedDoc.value.doc_date,
+            doc_time: selectedDoc.value.doc_time,
+            cust_code: selectedDoc.value.cust_code,
+            emp_code: empCode,
+            total_value: String(totalValue.value),
+            total_discount: String(discount),
+            total_before_vat: String(calc.beforeVat),
+            total_vat_value: String(calc.vatValue),
+            total_after_vat: String(calc.afterVat),
+            total_except_vat: String(calc.exceptVat),
+            total_amount: String(calc.amount)
+        };
+        const items = editItems.value.map((item) => ({
+            item_code: item.item_code,
+            item_name: item.item_name,
+            unit_code: item.unit_code,
+            barcode: item.barcode || '',
+            qty: String(item.po_qty),
+            price: String(item.price),
+            sum_amount: String((parseFloat(item.price) || 0) * (parseFloat(item.po_qty) || 0)),
+            stand_value: item.stand_value || '1',
+            divide_value: item.divide_value || '1',
+            ratio: item.ratio || '1',
+            tax_type: item.tax_type || '0',
+            wh_code: item.wh_code || '',
+            shelf_code: item.shelf_code || ''
+        }));
+        await axios.post(`${apiBase}/updatePoDetail`, { ...header, items }, {
             params: { docno: selectedDoc.value.doc_no }
         });
         toast.add({ severity: 'success', summary: 'บันทึกสำเร็จ', detail: `อัปเดต ${selectedDoc.value.doc_no} แล้ว`, life: 3000 });
@@ -151,7 +166,51 @@ async function saveDetail() {
     }
 }
 
-const totalAmount = computed(() => editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.po_qty) || 0), 0));
+// คำนวณยอดภาษีตาม tax_type และ vat_rate จาก selectedDoc
+const totalValue = computed(() =>
+    editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.po_qty) || 0), 0)
+);
+
+const totalExceptVat = computed(() =>
+    editItems.value.filter((i) => String(i.tax_type) === '1')
+        .reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.po_qty) || 0), 0)
+);
+
+const taxableBase = computed(() => {
+    const vatItems = editItems.value.filter((i) => String(i.tax_type) !== '1')
+        .reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.po_qty) || 0), 0);
+    const discount = parseFloat(selectedDoc.value?.total_discount) || 0;
+    return Math.max(0, vatItems - discount);
+});
+
+const vatCalc = computed(() => {
+    const taxType = parseInt(selectedDoc.value?.tax_type ?? 0);
+    const rate = parseFloat(selectedDoc.value?.vat_rate) || 0;
+    const base = taxableBase.value;
+    const discount = parseFloat(selectedDoc.value?.total_discount) || 0;
+    const exceptVat = totalExceptVat.value;
+    const tv = totalValue.value;
+
+    let beforeVat = 0, vatValue = 0, afterVat = 0, amount = 0;
+
+    if (taxType === 0) {
+        beforeVat = base;
+        vatValue = parseFloat(((beforeVat * rate) / 100).toFixed(2));
+        afterVat = parseFloat((beforeVat + vatValue).toFixed(2));
+        amount = parseFloat((afterVat + exceptVat).toFixed(2));
+    } else if (taxType === 1) {
+        afterVat = base;
+        beforeVat = parseFloat((afterVat / (1 + rate / 100)).toFixed(2));
+        vatValue = parseFloat((afterVat - beforeVat).toFixed(2));
+        amount = parseFloat((tv - discount).toFixed(2));
+    } else {
+        amount = parseFloat((tv - discount).toFixed(2));
+    }
+
+    return { beforeVat, vatValue, afterVat, exceptVat, amount };
+});
+
+const totalAmount = computed(() => vatCalc.value.amount);
 
 function formatNumber(value) {
     if (value === undefined || value === null) return '0.00';
@@ -310,10 +369,34 @@ onMounted(() => loadDocs());
                             </td>
                         </tr>
                     </tbody>
-                    <tfoot>
+                    <tfoot class="text-sm">
+                        <tr class="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-500">มูลค่าสินค้า</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(totalValue) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-500">ส่วนลดท้ายบิล</td>
+                            <td class="px-3 py-1.5 text-right text-orange-500">{{ formatNumber(selectedDoc?.total_discount) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-500">ยอดก่อนภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.beforeVat) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-500">ภาษีมูลค่าเพิ่ม ({{ selectedDoc?.vat_rate || 0 }}%)</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.vatValue) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-500">ยอดหลังภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.afterVat) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="8" class="px-3 py-1.5 text-right text-gray-500">ยกเว้นภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.exceptVat) }}</td>
+                        </tr>
                         <tr class="border-t-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 font-bold">
-                            <td colspan="8" class="px-3 py-2 text-right">ยอดรวม</td>
-                            <td class="px-3 py-2 text-right text-primary">{{ formatNumber(totalAmount) }}</td>
+                            <td colspan="8" class="px-3 py-2 text-right">มูลค่าสุทธิ</td>
+                            <td class="px-3 py-2 text-right text-primary text-base">{{ formatNumber(totalAmount) }}</td>
                         </tr>
                     </tfoot>
                 </table>

@@ -2,7 +2,7 @@
 import ProductService from '@/services/ProductService';
 import axios from 'axios';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 const apiBase = import.meta.env.VITE_APP_API;
@@ -35,10 +35,109 @@ const docTime = ref(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
 const remark = ref('');
 const custCode = ref('');
 const editItems = ref([]);
+const totalDiscount = ref(0);
 
-const totalAmount = computed(() =>
+// Warehouse & Shelf
+const warehouseList = ref([]);
+const selectedWarehouse = ref(null);
+const selectedShelf = ref(null);
+const shelfList = ref([]);
+const isLoadingShelf = ref(false);
+
+async function loadWarehouses() {
+    try {
+        const res = await axios.get(`${apiBase}/getWarehouseList`);
+        warehouseList.value = res.data?.data || [];
+    } catch (e) {
+        console.error('loadWarehouses error:', e);
+    }
+}
+
+async function onWarehouseChange() {
+    shelfList.value = [];
+    selectedShelf.value = null;
+    if (!selectedWarehouse.value) return;
+    isLoadingShelf.value = true;
+    try {
+        const res = await axios.get(`${apiBase}/getShelfList`, { params: { wh_code: selectedWarehouse.value.code } });
+        shelfList.value = res.data?.data || [];
+    } catch (e) {
+        console.error('getShelfList error:', e);
+    } finally {
+        isLoadingShelf.value = false;
+    }
+}
+
+watch(selectedWarehouse, () => { onWarehouseChange(); });
+
+// ประเภทภาษี
+const taxType = ref(0);
+const taxTypeOptions = [
+    { label: '0 - ภาษีแยกนอก', value: 0 },
+    { label: '1 - ภาษีรวมใน', value: 1 },
+    { label: '2 - ภาษีอัตราศูนย์', value: 2 },
+    { label: '3 - ไม่กระทบภาษี', value: 3 }
+];
+
+const vatRate = ref(7);
+
+async function loadVatRate() {
+    try {
+        const res = await axios.get(`${apiBase}/getVatRate`);
+        vatRate.value = parseFloat(res.data?.vat_rate) || 7;
+    } catch (e) {
+        vatRate.value = 7;
+    }
+}
+
+// มูลค่าสินค้าทั้งหมด
+const totalValue = computed(() =>
     editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0)
 );
+
+// มูลค่ายกเว้นภาษี (item tax_type = '1')
+const totalExceptVat = computed(() =>
+    editItems.value.filter((i) => String(i.tax_type) === '1')
+        .reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0)
+);
+
+// มูลค่าสินค้าที่ต้องคิดภาษี หลังหักส่วนลด
+const taxableBase = computed(() => {
+    const vatItems = editItems.value.filter((i) => String(i.tax_type) !== '1')
+        .reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0);
+    const discount = parseFloat(totalDiscount.value) || 0;
+    return Math.max(0, vatItems - discount);
+});
+
+// คำนวณภาษีตาม taxType
+const vatCalc = computed(() => {
+    const rate = parseFloat(vatRate.value) || 0;
+    const base = taxableBase.value;
+    const discount = parseFloat(totalDiscount.value) || 0;
+    const exceptVat = totalExceptVat.value;
+    const tv = totalValue.value;
+
+    let beforeVat = 0, vatValue = 0, afterVat = 0, amount = 0;
+
+    if (taxType.value === 0) {
+        beforeVat = base;
+        vatValue = parseFloat(((beforeVat * rate) / 100).toFixed(2));
+        afterVat = parseFloat((beforeVat + vatValue).toFixed(2));
+        amount = parseFloat((afterVat + exceptVat).toFixed(2));
+    } else if (taxType.value === 1) {
+        afterVat = base;
+        beforeVat = parseFloat((afterVat / (1 + rate / 100)).toFixed(2));
+        vatValue = parseFloat((afterVat - beforeVat).toFixed(2));
+        amount = parseFloat((tv - discount).toFixed(2));
+    } else {
+        beforeVat = 0; vatValue = 0; afterVat = 0;
+        amount = parseFloat((tv - discount).toFixed(2));
+    }
+
+    return { beforeVat, vatValue, afterVat, exceptVat, amount };
+});
+
+const totalAmount = computed(() => vatCalc.value.amount);
 
 async function loadPRAItems() {
     if (selectedPRs.value.length === 0) return;
@@ -52,7 +151,6 @@ async function loadPRAItems() {
             qty: parseFloat(item.qty) || 0,
             price: parseFloat(item.price) || 0
         }));
-        // ใช้ cust_code จาก PR แรก
         if (selectedPRs.value[0]?.cust_code) {
             custCode.value = selectedPRs.value[0].cust_code;
         }
@@ -65,13 +163,17 @@ async function loadPRAItems() {
 }
 
 async function createPO() {
+    if (!selectedWarehouse.value || !selectedShelf.value) {
+        toast.add({ severity: 'warn', summary: 'กรุณาเลือกคลังและที่เก็บ', detail: 'ต้องเลือกคลังสินค้าและที่เก็บก่อนสร้าง PO', life: 3000 });
+        return;
+    }
     isSaving.value = true;
     showConfirmDialog.value = false;
     try {
         const empCode = localStorage.getItem('_empCode') || '';
-        const whCode = localStorage.getItem('_selectedWarehouse')
-            ? JSON.parse(localStorage.getItem('_selectedWarehouse')).code
-            : '';
+        const whCode = selectedWarehouse.value.code;
+        const calc = vatCalc.value;
+        const discountValue = parseFloat(totalDiscount.value) || 0;
 
         const mappedItems = editItems.value.map((item) => ({
             item_code: item.item_code,
@@ -83,12 +185,10 @@ async function createPO() {
             stand_value: item.stand_value || '1',
             divide_value: item.divide_value || '1',
             ratio: item.ratio || '1',
-            tax_type: item.tax_type || '0'
+            tax_type: item.tax_type || '0',
+            wh_code: whCode,
+            shelf_code: selectedShelf.value?.code || ''
         }));
-
-        const totalValue = mappedItems.reduce((s, i) => s + (parseFloat(i.sum_amount) || 0), 0);
-        const totalExceptVat = mappedItems.filter((i) => i.tax_type === '1').reduce((s, i) => s + (parseFloat(i.sum_amount) || 0), 0);
-        const totalAfterVat = mappedItems.filter((i) => i.tax_type === '0').reduce((s, i) => s + (parseFloat(i.sum_amount) || 0), 0);
 
         const payload = {
             doc_no: docNo.value,
@@ -98,17 +198,22 @@ async function createPO() {
             branch_code: whCode,
             emp_code: empCode,
             remark: remark.value,
-            total_value: String(totalValue),
-            total_except_vat: String(totalExceptVat),
-            total_after_vat: String(totalAfterVat),
-            total_amount: String(totalValue),
+            sale_type: '0',
+            tax_type: String(taxType.value),
+            vat_rate: String(vatRate.value),
+            total_value: String(totalValue.value),
+            total_discount: String(discountValue),
+            total_before_vat: String(calc.beforeVat),
+            total_vat_value: String(calc.vatValue),
+            total_after_vat: String(calc.afterVat),
+            total_except_vat: String(calc.exceptVat),
+            total_amount: String(calc.amount),
             doc_list: selectedPRs.value.map((pr) => ({ doc_no: pr.doc_no, doc_date: pr.doc_date })),
             items: mappedItems
         };
 
         await axios.post(`${apiBase}/createPoDoc`, payload);
         toast.add({ severity: 'success', summary: 'สร้าง PO สำเร็จ', detail: docNo.value, life: 4000 });
-        // ไปหน้า PO list และ filter ด้วยเลขที่ที่สร้าง
         router.push({ name: 'po-list' });
     } catch (e) {
         console.error('createPO error:', e);
@@ -132,16 +237,14 @@ function handleImageError(event) {
     event.target.src = 'https://upload.wikimedia.org/wikipedia/commons/1/14/No_Image_Available.jpg';
 }
 
-onMounted(() => {
+onMounted(async () => {
     try {
         const raw = history.state?.selectedPRs;
-        if (raw) {
-            selectedPRs.value = JSON.parse(raw);
-        }
+        if (raw) selectedPRs.value = JSON.parse(raw);
     } catch (e) {
         console.error('parse selectedPRs error:', e);
     }
-    loadPRAItems();
+    await Promise.all([loadWarehouses(), loadPRAItems(), loadVatRate()]);
 });
 </script>
 
@@ -173,7 +276,19 @@ onMounted(() => {
                     <label class="text-sm font-medium">เจ้าหนี้</label>
                     <InputText v-model="custCode" class="w-full bg-gray-50 dark:bg-gray-800" readonly />
                 </div>
-                <div class="flex flex-col gap-1 sm:col-span-2">
+                <div class="flex flex-col gap-1">
+                    <label class="text-sm font-medium">คลังสินค้า</label>
+                    <Select v-model="selectedWarehouse" :options="warehouseList" optionLabel="name" placeholder="เลือกคลัง" class="w-full" />
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-sm font-medium">ที่เก็บ</label>
+                    <Select v-model="selectedShelf" :options="shelfList" optionLabel="name" placeholder="เลือกที่เก็บ" class="w-full" :disabled="!selectedWarehouse" :loading="isLoadingShelf" />
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-sm font-medium">ประเภทภาษี</label>
+                    <Select v-model="taxType" :options="taxTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+                </div>
+                <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
                     <label class="text-sm font-medium">หมายเหตุ</label>
                     <InputText v-model="remark" class="w-full" placeholder="ระบุหมายเหตุ (ถ้ามี)" />
                 </div>
@@ -241,9 +356,30 @@ onMounted(() => {
                             </td>
                         </tr>
                     </tbody>
-                    <tfoot>
+                    <tfoot class="text-sm">
+                        <tr class="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                            <td colspan="9" class="px-3 py-1.5 text-right text-gray-500">มูลค่าสินค้า</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(totalValue) }}</td>
+                        </tr>
+
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="9" class="px-3 py-1.5 text-right text-gray-500">ยอดก่อนภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.beforeVat) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="9" class="px-3 py-1.5 text-right text-gray-500">ภาษีมูลค่าเพิ่ม ({{ vatRate }}%)</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.vatValue) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="9" class="px-3 py-1.5 text-right text-gray-500">ยอดหลังภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.afterVat) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50 dark:bg-gray-800">
+                            <td colspan="9" class="px-3 py-1.5 text-right text-gray-500">ยกเว้นภาษี</td>
+                            <td class="px-3 py-1.5 text-right">{{ formatNumber(vatCalc.exceptVat) }}</td>
+                        </tr>
                         <tr class="border-t-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 font-bold">
-                            <td colspan="9" class="px-3 py-2 text-right">ยอดรวม</td>
+                            <td colspan="9" class="px-3 py-2 text-right">มูลค่าสุทธิ</td>
                             <td class="px-3 py-2 text-right text-primary text-base">{{ formatNumber(totalAmount) }}</td>
                         </tr>
                     </tfoot>
@@ -254,7 +390,7 @@ onMounted(() => {
         <!-- Action buttons -->
         <div class="flex justify-between">
             <Button label="ยกเลิก" icon="pi pi-arrow-left" severity="secondary" outlined @click="router.back()" />
-            <Button label="สร้าง PO" icon="pi pi-check" severity="success" @click="showConfirmDialog = true" :disabled="editItems.length === 0 || isSaving" />
+            <Button label="สร้าง PO" icon="pi pi-check" severity="success" @click="showConfirmDialog = true" :disabled="editItems.length === 0 || !selectedWarehouse || !selectedShelf || isSaving" />
         </div>
 
         <!-- Confirm Dialog -->
@@ -266,7 +402,7 @@ onMounted(() => {
                     <div class="text-sm text-gray-500 mb-1">เลขที่: <span class="font-mono font-medium text-gray-800 dark:text-gray-200">{{ docNo }}</span></div>
                     <div class="text-sm text-gray-500 mb-1">เจ้าหนี้: {{ custCode }}</div>
                     <div class="text-sm text-gray-500 mb-1">รายการสินค้า: {{ editItems.length }} รายการ</div>
-                    <div class="text-sm font-semibold mt-2">ยอดรวม: ฿{{ formatNumber(totalAmount) }}</div>
+                    <div class="text-sm font-semibold mt-2">มูลค่าสุทธิ: ฿{{ formatNumber(totalAmount) }}</div>
                 </div>
             </div>
             <template #footer>

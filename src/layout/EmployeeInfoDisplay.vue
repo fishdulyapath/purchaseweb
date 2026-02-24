@@ -1,26 +1,14 @@
 <script setup>
 import SupplierService from '@/services/SupplierService';
 import { useAuthenStore } from '@/stores/authen';
-import WarehouseService from '@/services/WarehouseList';
 import { onMounted, ref } from 'vue';
 
 const authenStore = useAuthenStore();
 
-// ตัวแปรสถานะ
 const isEmployee = ref(false);
 const employeeData = ref(null);
 const userData = ref(null);
 const storeName = ref('');
-
-const warehouseName = ref('');
-const warehouseCode = ref('');
-
-// ตัวแปรสำหรับเปลี่ยนคลัง
-const showWarehouseDialog = ref(false);
-const selectedWarehouse = ref(null);
-const warehouseOptions = ref([]);
-const allWarehouseOptions = ref([]);
-const isLoadingWarehouses = ref(false);
 
 // ตัวแปรสำหรับเปลี่ยนเจ้าหนี้
 const showSupplierDialog = ref(false);
@@ -29,7 +17,6 @@ const supplierOptions = ref([]);
 const isSearchingSupplier = ref(false);
 let supplierSearchTimer = null;
 
-// ฟังก์ชันเปิด dialog เปลี่ยนเจ้าหนี้
 const openChangeSupplierDialog = async () => {
     selectedSupplier.value = null;
     supplierOptions.value = [];
@@ -46,7 +33,6 @@ const openChangeSupplierDialog = async () => {
     }
 };
 
-// debounce ค้นหาเจ้าหนี้
 const filterSuppliers = (event) => {
     const searchTerm = event.value || '';
     if (supplierSearchTimer) clearTimeout(supplierSearchTimer);
@@ -63,146 +49,43 @@ const filterSuppliers = (event) => {
     }, 1000);
 };
 
-// ฟังก์ชันยืนยันการเปลี่ยนเจ้าหนี้
 const confirmChangeSupplier = async () => {
     if (!selectedSupplier.value) return;
-
     const supplier = selectedSupplier.value;
     localStorage.setItem('_userCode', supplier.code);
     localStorage.setItem('_userData', JSON.stringify({ user_code: supplier.code, user_name: supplier.name }));
-
     authenStore.userData = { user_code: supplier.code, user_name: supplier.name };
     authenStore.userCode = supplier.code;
-
     userData.value = { user_code: supplier.code, user_name: supplier.name };
     storeName.value = supplier.name;
-
     showSupplierDialog.value = false;
     window.location.reload();
 };
 
-// ฟังก์ชันโหลดรายการคลัง
-const loadWarehouses = async () => {
-    try {
-        isLoadingWarehouses.value = true;
-        const response = await WarehouseService.getWarehouseList();
-
-        if (response && response.success && Array.isArray(response.data)) {
-            warehouseOptions.value = response.data;
-            allWarehouseOptions.value = response.data;
-        } else {
-            warehouseOptions.value = [];
-            allWarehouseOptions.value = [];
-        }
-    } catch (error) {
-        console.error('เกิดข้อผิดพลาดในการโหลดข้อมูลคลัง:', error);
-        warehouseOptions.value = [];
-        allWarehouseOptions.value = [];
-    } finally {
-        isLoadingWarehouses.value = false;
-    }
-};
-
-// ฟังก์ชัน filter คลัง
-const filterWarehouses = (event) => {
-    const searchTerm = (event.value || '').trim();
-    const searchTermLower = searchTerm.toLowerCase();
-
-    if (!searchTerm) {
-        warehouseOptions.value = [...allWarehouseOptions.value];
-        return;
-    }
-
-    warehouseOptions.value = allWarehouseOptions.value.filter((warehouse) => {
-        const code = (warehouse.code || '').toLowerCase();
-        const name = (warehouse.name || '').toLowerCase();
-
-        const matched = code.includes(searchTermLower) || name.includes(searchTermLower);
-        // console.log('Filtering warehouse:', { code, name, searchTermLower, matched });
-        return matched;
-    });
-
-    // console.log('Filtered warehouses count:', warehouseOptions.value.length, warehouseOptions.value);
-};
-
-// ฟังก์ชันเปิด dialog เปลี่ยนคลัง
-const openChangeWarehouseDialog = async () => {
-    await loadWarehouses();
-    // ตั้งค่าคลังปัจจุบันเป็นค่าเริ่มต้น
-    if (warehouseCode.value) {
-        selectedWarehouse.value = warehouseOptions.value.find((w) => w.code === warehouseCode.value) || null;
-    }
-    showWarehouseDialog.value = true;
-};
-
-// ฟังก์ชันยืนยันการเปลี่ยนคลัง
-const confirmChangeWarehouse = () => {
-    if (!selectedWarehouse.value) {
-        alert('กรุณาเลือกคลัง');
-        return;
-    }
-
-    // บันทึกข้อมูลคลังใหม่ลง localStorage
-    localStorage.setItem('_selectedWarehouse', JSON.stringify(selectedWarehouse.value));
-    localStorage.setItem('_warehouseCode', selectedWarehouse.value.code);
-    localStorage.setItem('_warehouseName', selectedWarehouse.value.name);
-
-    // อัพเดตค่าแสดงผล
-    warehouseCode.value = selectedWarehouse.value.code;
-    warehouseName.value = selectedWarehouse.value.name;
-
-    // ปิด dialog
-    showWarehouseDialog.value = false;
-
-    // รีโหลดหน้าเพื่อให้ข้อมูลอัพเดต
-    window.location.reload();
-};
-
-// ดึงข้อมูลเมื่อคอมโพเนนต์ถูกโหลด
 onMounted(() => {
     const userType = localStorage.getItem('_userType');
     isEmployee.value = userType === 'employee';
 
-    warehouseCode.value = localStorage.getItem('_warehouseCode') ?? '';
-    warehouseName.value = localStorage.getItem('_warehouseName') ?? '';
-
-    // ถ้าผู้ใช้เป็นพนักงาน ให้ดึงข้อมูลพนักงาน
     if (isEmployee.value) {
         const empDataStr = localStorage.getItem('_empData');
         const userDataStr = localStorage.getItem('_userData');
-
         if (empDataStr) {
-            try {
-                employeeData.value = JSON.parse(empDataStr);
-            } catch (e) {
-                console.error('Error parsing employee data:', e);
-            }
+            try { employeeData.value = JSON.parse(empDataStr); } catch (e) { console.error(e); }
         }
-
         if (userDataStr) {
             try {
                 userData.value = JSON.parse(userDataStr);
-                // ดึงชื่อร้านค้าจากข้อมูลผู้ใช้
                 storeName.value = userData.value.user_name || '';
-            } catch (e) {
-                console.error('Error parsing user data:', e);
-            }
+            } catch (e) { console.error(e); }
         }
     }
 });
 </script>
 
 <template>
-    <!-- แสดงข้อมูลพนักงาน -->
     <div v-if="isEmployee && (employeeData || userData)" class="user-info employee-info">
         <div class="user-profile">
             <div class="user-welcome">
-                <span class="welcome-text">คลัง</span>
-                <div class="warehouse-row">
-                    <span class="user-name">{{ warehouseCode }} ~ {{ warehouseName }}</span>
-                    <Button icon="pi pi-sync" text rounded size="small" @click="openChangeWarehouseDialog" v-tooltip.top="'เปลี่ยนคลัง'" class="change-warehouse-btn" />
-                </div>
-
                 <span class="welcome-text">พนักงาน</span>
                 <span class="user-name">{{ employeeData?.user_code }} ~ {{ employeeData?.user_name }}</span>
                 <span class="welcome-text">คุณกำลังเปิดบิลร้าน</span>
@@ -252,48 +135,6 @@ onMounted(() => {
             <Button label="ยืนยัน" icon="pi pi-check" severity="success" @click="confirmChangeSupplier" :disabled="!selectedSupplier" />
         </template>
     </Dialog>
-
-    <!-- Dialog เปลี่ยนคลัง -->
-    <Dialog v-model:visible="showWarehouseDialog" header="เปลี่ยนคลัง" :modal="true" :style="{ width: '400px' }" :closable="true">
-        <div class="p-fluid">
-            <div class="field">
-                <label for="warehouse" class="font-medium mb-2 block">เลือกคลัง</label>
-                <Select
-                    id="warehouse"
-                    v-model="selectedWarehouse"
-                    :options="warehouseOptions"
-                    optionLabel="name"
-                    placeholder="เลือกคลัง"
-                    class="w-full"
-                    :loading="isLoadingWarehouses"
-                    filter
-                    :filterFields="['code', 'name']"
-                    @filter="filterWarehouses"
-                    filterPlaceholder="พิมพ์ชื่อหรือรหัสคลัง"
-                >
-                    <template #value="slotProps">
-                        <div v-if="slotProps.value" class="flex items-center">
-                            <i class="pi pi-building mr-2 text-primary"></i>
-                            <div>{{ slotProps.value.code }} ~ {{ slotProps.value.name }}</div>
-                        </div>
-                        <span v-else>{{ slotProps.placeholder }}</span>
-                    </template>
-                    <template #option="slotProps">
-                        <div class="flex flex-column w-full" v-if="slotProps && slotProps.option">
-                            <div class="font-bold">{{ slotProps.option.code }}~</div>
-                            <div>{{ slotProps.option.name }}</div>
-                        </div>
-                    </template>
-                </Select>
-            </div>
-        </div>
-
-        <template #footer>
-            <Button label="ยกเลิก" icon="pi pi-times" severity="secondary" outlined @click="showWarehouseDialog = false" />
-            <Button label="ยืนยัน" icon="pi pi-check" severity="success" @click="confirmChangeWarehouse" :disabled="!selectedWarehouse" />
-        </template>
-    </Dialog>
-
 </template>
 
 <style lang="scss" scoped>

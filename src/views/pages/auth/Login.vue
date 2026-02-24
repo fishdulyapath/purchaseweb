@@ -1,6 +1,5 @@
 <script setup>
 import SupplierService from '@/services/SupplierService';
-import WarehouseService from '@/services/WarehouseList';
 import { useAuthenStore } from '@/stores/authen';
 import { useCartStore } from '@/stores/cartStore';
 import { computed, onMounted, ref } from 'vue';
@@ -24,15 +23,6 @@ const selectedSupplier = ref(null);
 const isSearching = ref(false);
 const supplierOptions = ref([]);
 
-// เลือกคลัง
-const showSelectionScreen = ref(false);
-const selectedWarehouse = ref(null);
-const isLoadingWarehouses = ref(false);
-const warehouseOptions = ref([]);
-const allWarehouseOptions = ref([]);
-
-// ประเภทการขาย
-const saleType = ref(1);
 
 onMounted(() => {
     authenStore.loginErrorMsg = '';
@@ -90,8 +80,7 @@ const doLogin = async (e) => {
 
     if (success && authenStore.isAuthenticated && authenStore.isEmployee) {
         try {
-            await loadWarehouses();
-            showSelectionScreen.value = true;
+            await proceedToSupplierSelection();
         } catch (error) {
             console.error('เกิดข้อผิดพลาดในการโหลดข้อมูล:', error);
             router.push('/');
@@ -99,57 +88,6 @@ const doLogin = async (e) => {
     }
 };
 
-const loadWarehouses = async () => {
-    try {
-        isLoadingWarehouses.value = true;
-        const response = await WarehouseService.getWarehouseList();
-
-        if (response && response.success && Array.isArray(response.data)) {
-            warehouseOptions.value = response.data;
-            allWarehouseOptions.value = response.data;
-        } else {
-            warehouseOptions.value = [];
-            allWarehouseOptions.value = [];
-        }
-    } catch (error) {
-        console.error('เกิดข้อผิดพลาดในการโหลดข้อมูลคลัง:', error);
-        warehouseOptions.value = [];
-        allWarehouseOptions.value = [];
-        throw error;
-    } finally {
-        isLoadingWarehouses.value = false;
-    }
-};
-
-const filterWarehouses = (event) => {
-    const searchTerm = (event.value || '').toLowerCase().trim();
-    if (!searchTerm) {
-        warehouseOptions.value = [...allWarehouseOptions.value];
-        return;
-    }
-    warehouseOptions.value = allWarehouseOptions.value.filter((w) => {
-        const code = (w.code || '').toLowerCase();
-        const name = (w.name || '').toLowerCase();
-        return code.includes(searchTerm) || name.includes(searchTerm);
-    });
-};
-
-// ยืนยันการตั้งค่า (คลัง + ประเภทการขาย) แล้วไปเลือกเจ้าหนี้
-const confirmAllSelections = async () => {
-    if (!selectedWarehouse.value) {
-        alert('กรุณาเลือกคลังก่อนดำเนินการต่อ');
-        return;
-    }
-
-    localStorage.setItem('_selectedWarehouse', JSON.stringify(selectedWarehouse.value));
-    localStorage.setItem('_warehouseCode', selectedWarehouse.value.code);
-    localStorage.setItem('_warehouseName', selectedWarehouse.value.name);
-    localStorage.setItem('_saleType', saleType.value.toString());
-    localStorage.setItem('_saleTypeName', saleType.value === 1 ? 'เงินสด' : 'เงินเชื่อ');
-
-    showSelectionScreen.value = false;
-    await proceedToSupplierSelection();
-};
 
 // โหลดและแสดงหน้าเลือกเจ้าหนี้
 const proceedToSupplierSelection = async () => {
@@ -222,10 +160,7 @@ const confirmSupplierSelection = async () => {
 const logout = () => {
     authenStore.logout();
     showSupplierSearch.value = false;
-    showSelectionScreen.value = false;
     selectedSupplier.value = null;
-    selectedWarehouse.value = null;
-    saleType.value = 1;
 
     const savedUsername = localStorage.getItem('_savedUsername');
     if (savedUsername) {
@@ -247,7 +182,7 @@ const logout = () => {
 };
 
 const showLoginForm = computed(() => {
-    return !showSupplierSearch.value && !showSelectionScreen.value;
+    return !showSupplierSearch.value;
 });
 </script>
 
@@ -267,7 +202,6 @@ const showLoginForm = computed(() => {
 
                         <div class="p-badge p-component p-badge-info my-2 inline-block">
                             <span v-if="showSupplierSearch" class="text-sm font-medium">กรุณาเลือกเจ้าหนี้</span>
-                            <span v-else-if="showSelectionScreen" class="text-sm font-medium">กรุณาตั้งค่าการสั่งซื้อ</span>
                             <span v-else class="text-sm font-medium">เข้าสู่ระบบสั่งซื้อสำหรับพนักงาน</span>
                         </div>
                     </div>
@@ -347,57 +281,6 @@ const showLoginForm = computed(() => {
                         </div>
                     </div>
 
-                    <!-- ส่วนตั้งค่าการสั่งซื้อ (คลัง + ประเภท) -->
-                    <div v-if="showSelectionScreen" class="selection-screen">
-                        <div v-if="isLoadingWarehouses && warehouseOptions.length === 0" class="flex flex-column align-items-center justify-content-center p-2 sm:p-4 gap-2">
-                            <ProgressSpinner style="width: 40px; height: 40px" strokeWidth="4" />
-                            <span class="text-sm">กำลังโหลดข้อมูล...</span>
-                        </div>
-
-                        <div v-else>
-                            <!-- เลือกคลัง (บังคับ) -->
-                            <div class="mb-3 sm:mb-4">
-                                <label class="block text-surface-900 dark:text-surface-0 font-medium mb-1 sm:mb-2">
-                                    <i class="pi pi-building mr-2"></i>เลือกคลัง <span class="text-red-500">*</span>
-                                </label>
-                                <Select
-                                    v-model="selectedWarehouse"
-                                    :options="warehouseOptions"
-                                    optionLabel="name"
-                                    placeholder="เลือกคลัง"
-                                    class="w-full"
-                                    :loading="isLoadingWarehouses"
-                                    :showClear="false"
-                                    filter
-                                    @filter="filterWarehouses"
-                                    filterPlaceholder="พิมพ์ชื่อหรือรหัสคลัง"
-                                >
-                                    <template #value="slotProps">
-                                        <div v-if="slotProps.value" class="flex items-center">
-                                            <i class="pi pi-building mr-2 text-primary"></i>
-                                            <div>{{ slotProps.value.code }} ~ {{ slotProps.value.name }}</div>
-                                        </div>
-                                        <span v-else>{{ slotProps.placeholder }}</span>
-                                    </template>
-                                    <template #option="slotProps">
-                                        <div class="flex flex-column w-full" v-if="slotProps && slotProps.option">
-                                            <div class="font-bold">{{ slotProps.option.code }}</div>
-                                            <div>{{ slotProps.option.name }}</div>
-                                        </div>
-                                    </template>
-                                </Select>
-                                <small class="text-color-secondary">บังคับเลือกคลัง</small>
-                            </div>
-
-                            <div class="flex flex-column sm:flex-row gap-2 mb-4">
-                                <Button label="ถัดไป: เลือกเจ้าหนี้" icon="pi pi-arrow-right" iconPos="right" severity="success" class="w-full" @click="confirmAllSelections" :disabled="!selectedWarehouse" />
-                            </div>
-
-                            <div class="mt-2">
-                                <Button label="ออกจากระบบ" icon="pi pi-sign-out" severity="secondary" outlined class="w-full" @click="logout()" />
-                            </div>
-                        </div>
-                    </div>
 
                     <!-- ฟอร์ม login พนักงาน -->
                     <div v-if="showLoginForm">
