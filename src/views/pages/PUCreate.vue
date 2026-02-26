@@ -92,7 +92,7 @@ const saleTypeOptions = [
     { label: '3 - สินค้าเงินสด (บริการ)', value: 3 }
 ];
 
-const taxType = ref(0);
+const taxType = ref(1);
 const taxTypeOptions = [
     { label: '0 - ภาษีแยกนอก', value: 0 },
     { label: '1 - ภาษีรวมใน', value: 1 },

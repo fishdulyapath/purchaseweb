@@ -68,10 +68,12 @@ async function onWarehouseChange() {
     }
 }
 
-watch(selectedWarehouse, () => { onWarehouseChange(); });
+watch(selectedWarehouse, () => {
+    onWarehouseChange();
+});
 
 // ประเภทภาษี
-const taxType = ref(0);
+const taxType = ref(1);
 const taxTypeOptions = [
     { label: '0 - ภาษีแยกนอก', value: 0 },
     { label: '1 - ภาษีรวมใน', value: 1 },
@@ -91,20 +93,14 @@ async function loadVatRate() {
 }
 
 // มูลค่าสินค้าทั้งหมด
-const totalValue = computed(() =>
-    editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0)
-);
+const totalValue = computed(() => editItems.value.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0));
 
 // มูลค่ายกเว้นภาษี (item tax_type = '1')
-const totalExceptVat = computed(() =>
-    editItems.value.filter((i) => String(i.tax_type) === '1')
-        .reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0)
-);
+const totalExceptVat = computed(() => editItems.value.filter((i) => String(i.tax_type) === '1').reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0));
 
 // มูลค่าสินค้าที่ต้องคิดภาษี หลังหักส่วนลด
 const taxableBase = computed(() => {
-    const vatItems = editItems.value.filter((i) => String(i.tax_type) !== '1')
-        .reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0);
+    const vatItems = editItems.value.filter((i) => String(i.tax_type) !== '1').reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseFloat(i.qty) || 0), 0);
     const discount = parseFloat(totalDiscount.value) || 0;
     return Math.max(0, vatItems - discount);
 });
@@ -117,7 +113,10 @@ const vatCalc = computed(() => {
     const exceptVat = totalExceptVat.value;
     const tv = totalValue.value;
 
-    let beforeVat = 0, vatValue = 0, afterVat = 0, amount = 0;
+    let beforeVat = 0,
+        vatValue = 0,
+        afterVat = 0,
+        amount = 0;
 
     if (taxType.value === 0) {
         beforeVat = base;
@@ -130,7 +129,9 @@ const vatCalc = computed(() => {
         vatValue = parseFloat((afterVat - beforeVat).toFixed(2));
         amount = parseFloat((tv - discount).toFixed(2));
     } else {
-        beforeVat = 0; vatValue = 0; afterVat = 0;
+        beforeVat = 0;
+        vatValue = 0;
+        afterVat = 0;
         amount = parseFloat((tv - discount).toFixed(2));
     }
 
@@ -176,6 +177,7 @@ async function createPO() {
         const discountValue = parseFloat(totalDiscount.value) || 0;
 
         const mappedItems = editItems.value.map((item) => ({
+            doc_no: item.doc_no || '',
             item_code: item.item_code,
             item_name: item.item_name,
             unit_code: item.unit_code,
@@ -318,6 +320,7 @@ onMounted(async () => {
                 <table class="w-full text-sm">
                     <thead class="bg-gray-50 dark:bg-gray-800">
                         <tr>
+                            <th class="text-left px-3 py-2 font-medium">เอกสาร</th>
                             <th class="text-left px-3 py-2 font-medium w-12">รูป</th>
                             <th class="text-left px-3 py-2 font-medium">รหัส</th>
                             <th class="text-left px-3 py-2 font-medium">ชื่อสินค้า</th>
@@ -332,6 +335,7 @@ onMounted(async () => {
                     </thead>
                     <tbody>
                         <tr v-for="(item, idx) in editItems" :key="idx" class="border-t border-gray-100 dark:border-gray-800">
+                            <td class="px-3 py-2 font-medium">{{ item.doc_no }}</td>
                             <td class="px-3 py-2">
                                 <div class="w-10 h-10 overflow-hidden rounded border border-gray-200 dark:border-gray-700">
                                     <img :src="getProductImage(item.item_code)" :alt="item.item_code" class="w-full h-full object-contain" @error="handleImageError" />
@@ -399,7 +403,9 @@ onMounted(async () => {
                 <i class="pi pi-question-circle text-3xl text-primary mt-1"></i>
                 <div>
                     <div class="font-medium mb-2">ยืนยันการสร้างใบสั่งซื้อ?</div>
-                    <div class="text-sm text-gray-500 mb-1">เลขที่: <span class="font-mono font-medium text-gray-800 dark:text-gray-200">{{ docNo }}</span></div>
+                    <div class="text-sm text-gray-500 mb-1">
+                        เลขที่: <span class="font-mono font-medium text-gray-800 dark:text-gray-200">{{ docNo }}</span>
+                    </div>
                     <div class="text-sm text-gray-500 mb-1">เจ้าหนี้: {{ custCode }}</div>
                     <div class="text-sm text-gray-500 mb-1">รายการสินค้า: {{ editItems.length }} รายการ</div>
                     <div class="text-sm font-semibold mt-2">มูลค่าสุทธิ: ฿{{ formatNumber(totalAmount) }}</div>
