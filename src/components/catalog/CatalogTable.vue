@@ -113,7 +113,7 @@ const stockFilterOptions = [
 
 const filters = reactive({
     search: '',
-    stockFilter: localStorage.getItem('_isstock') === '1' ? 'gt0' : 'all',
+    stockFilter: 'all',
     warehouseGroup: [],
     warehouse: [],
     shelfFrom: '',
