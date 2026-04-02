@@ -3,7 +3,6 @@ import BalanceService from '@/services/BalanceService';
 import ProductService from '@/services/ProductService';
 import { useAuthenStore } from '@/stores/authen';
 import { useCartStore } from '@/stores/cartStore';
-import Checkbox from 'primevue/checkbox';
 import Galleria from 'primevue/galleria';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
@@ -108,9 +107,8 @@ function getSearchQuery() {
 
 const stockFilterOptions = [
     { label: 'ทั้งหมด', value: 'all' },
-    { label: 'มีคงเหลือ', value: 'gt0' },
-    { label: 'หมด', value: 'zero' },
-    { label: 'ใกล้หมด', value: 'low' }
+    { label: 'หมด (คงเหลือ 0)', value: 'zero' },
+    { label: 'ใกล้หมด (คงเหลือ < 4)', value: 'low' }
 ];
 
 const filters = reactive({
@@ -126,17 +124,11 @@ const filters = reactive({
     model: [],
     category: [],
     format: [],
-    qtyConditions: [{ op: '>=', val: '' }],
-    dotYears: [],
+    qtyFrom: '',
+    qtyTo: '',
     priceFrom: '',
     priceTo: ''
 });
-
-const currentYear = new Date().getFullYear();
-const dotYearOptions = Array.from({ length: 5 }, (_, i) => ({
-    label: `${currentYear - i}`,
-    value: String(currentYear - i)
-}));
 
 const warehouseOptions = ref([]);
 const shelfOptions = ref([]);
@@ -219,11 +211,8 @@ async function loadBalanceList() {
             offset: currentPage.value * pageSize.value,
             limit: pageSize.value,
             stockfilter: filters.stockFilter || 'all',
-            qty_conditions: filters.qtyConditions
-                .filter((c) => c.val !== '')
-                .map((c) => c.op + c.val)
-                .join('|'),
-            dot_years: filters.dotYears.join(','),
+            qty_from: filters.qtyFrom || '',
+            qty_to: filters.qtyTo || '',
             price_from: filters.priceFrom || '',
             price_to: filters.priceTo || ''
         };
@@ -251,13 +240,6 @@ async function loadBalanceDetail(row) {
         const response = await BalanceService.getBalanceDetail(row.item_code, row.shelf_list || '', row.warehouse_list || '');
         if (response.data && response.data.success) {
             let detailRows = response.data.data || [];
-            if (filters.dotYears.length > 0) {
-                const selectedPfx = filters.dotYears.map((y) => String(y).slice(-2));
-                detailRows = detailRows.filter((d) => {
-                    const loc = d.location || '';
-                    return selectedPfx.includes(loc.substring(0, 2));
-                });
-            }
             expandedDetails.value[key] = detailRows.map((d) => ({ ...d, price: '', _priceLoaded: false }));
             lazyLoadDetailPrices(key);
         }
@@ -390,8 +372,8 @@ function clearFilters() {
     filters.model = [];
     filters.category = [];
     filters.format = [];
-    filters.qtyConditions = [{ op: '>=', val: '' }];
-    filters.dotYears = [];
+    filters.qtyFrom = '';
+    filters.qtyTo = '';
     filters.priceFrom = '';
     filters.priceTo = '';
     currentPage.value = 0;
@@ -604,41 +586,15 @@ onMounted(() => {
                         :maxSelectedLabels="2"
                     />
                 </div>
-
-                <!-- จำนวนสินค้าคงเหลือ (multi-condition) -->
-                <div class="filter-item filter-item-wide">
-                    <label>จำนวนสินค้าคงเหลือ</label>
-                    <div v-for="(cond, idx) in filters.qtyConditions" :key="idx" class="multi-cond-row">
-                        <Select
-                            v-model="cond.op"
-                            :options="[
-                                { label: '>=', value: '>=' },
-                                { label: '>', value: '>' },
-                                { label: '<=', value: '<=' },
-                                { label: '<', value: '<' },
-                                { label: '=', value: '=' }
-                            ]"
-                            optionLabel="label"
-                            optionValue="value"
-                            style="width: 80px"
-                        />
-                        <InputText v-model="cond.val" placeholder="จำนวน" style="width: 100px" type="number" />
-                        <Button icon="pi pi-times" text rounded severity="danger" size="small" v-if="filters.qtyConditions.length > 1" @click="filters.qtyConditions.splice(idx, 1)" />
-                        <Button icon="pi pi-plus" text rounded severity="success" size="small" v-if="idx === filters.qtyConditions.length - 1" @click="filters.qtyConditions.push({ op: '>=', val: '' })" />
-                    </div>
-                </div>
-
-                <!-- ปี DOT -->
+                <!-- จำนวนสินค้าคงเหลือ (range) -->
                 <div class="filter-item">
-                    <label>ปี DOT</label>
-                    <div class="dot-year-list">
-                        <div v-for="opt in dotYearOptions" :key="opt.value" class="dot-year-item">
-                            <Checkbox v-model="filters.dotYears" :value="opt.value" :inputId="'dot_' + opt.value" />
-                            <label :for="'dot_' + opt.value">{{ opt.label }}</label>
-                        </div>
+                    <label>จำนวนสินค้าคงเหลือ (จาก - ถึง)</label>
+                    <div class="price-range-row">
+                        <InputText v-model="filters.qtyFrom" placeholder="จากจำนวน" type="number" style="width: 110px" />
+                        <span>-</span>
+                        <InputText v-model="filters.qtyTo" placeholder="ถึงจำนวน" type="number" style="width: 110px" />
                     </div>
                 </div>
-
                 <!-- ราคา (range) -->
                 <div class="filter-item">
                     <label>ราคา (จาก - ถึง)</label>
@@ -958,23 +914,6 @@ onMounted(() => {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
-}
-.multi-cond-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.35rem;
-}
-.dot-year-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1rem;
-    align-items: center;
-}
-.dot-year-item {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
 }
 .price-range-row {
     display: flex;

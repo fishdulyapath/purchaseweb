@@ -30,8 +30,8 @@ export default {
                 offset: params.offset || 0,
                 limit: params.limit || 30,
                 stockfilter: params.stockfilter || 'all',
-                qty_conditions: params.qty_conditions || '',
-                dot_years: params.dot_years || '',
+                qty_from: params.qty_from || '',
+                qty_to: params.qty_to || '',
                 price_from: params.price_from || '',
                 price_to: params.price_to || ''
             }
